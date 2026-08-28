@@ -11,7 +11,9 @@ build_db.py — builds the offline databases the cardscan phone app uses.
                                                               instantly and offline (no API call). Downloads ~40 KB per card from
                                                               Scryfall at their polite rate (about 30 s per 300-card set). Merges into
                                                               an existing hashes.json.gz.
-  python build_db.py --langs en,ja        -> include other languages in cards.json.gz (default: English only)
+  python build_db.py --langs en,ja,de     -> include other languages in cards.json.gz (default: English only). Foreign printings carry
+                                             their printed name so the phone's text reader can match them (with the matching language
+                                             pack uploaded: jpn.traineddata for ja, deu for de, fra, spa, ita, por, rus, kor, chi_sim).
 
 Put the resulting .gz files next to index.html in the GitHub repo (commit them), then tap "Update database" in the app.
 
@@ -128,13 +130,14 @@ def build_cards(langs, out_path):
         cards.append([c["id"], c["name"], c["set"], c["collector_number"], RARITY.get(c.get("rarity"), "?"), c.get("lang", "en"),
                       price(p, "usd"), price(p, "usd_foil"), price(p, "usd_etched"), price(p, "eur"), price(p, "eur_foil"),
                       variant_flags(c), c.get("artist", ""), c.get("released_at", ""), oracle_idx[oid],
-                      "".join(x[0] for x in (c.get("finishes") or []))])
+                      "".join(x[0] for x in (c.get("finishes") or [])),
+                      (c.get("printed_name") or (c.get("card_faces") or [{}])[0].get("printed_name") or "") if c.get("lang", "en") != "en" else ""])
     os.unlink(tmp.name)
     if not cards:
         sys.exit("no cards were read — the download may have failed; try again")
     db = {"built": time.strftime("%Y-%m-%d"), "source": "Scryfall default_cards (prices: TCGplayer market USD, Cardmarket EUR)",
           "langs": sorted(langs), "sets": sets, "fields": ["id", "name", "set", "cn", "rarity", "lang", "usd", "usd_foil", "usd_etched",
-          "eur", "eur_foil", "variant", "artist", "released", "oracle", "finishes"],
+          "eur", "eur_foil", "variant", "artist", "released", "oracle", "finishes", "printed_name"],
           "oracle_fields": ["name", "type_line", "mana_cost", "cmc", "colors", "oracle_text", "layout"],
           "cards": cards, "oracle": oracle}
     raw = json.dumps(db, separators=(",", ":"), ensure_ascii=False).encode("utf-8")

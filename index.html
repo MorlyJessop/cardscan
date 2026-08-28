@@ -100,14 +100,19 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 .pick .li{cursor:pointer}
 .selbar{position:sticky;top:0;background:var(--panel);padding:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:2;border-bottom:1px solid var(--line)}
 .card input[type=checkbox]{width:20px;height:20px;margin:0 6px 0 0}
-.numpad{display:flex;gap:8px;align-items:center;margin-top:8px}.numpad input{font-size:20px;letter-spacing:.1em}.legend i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px;vertical-align:middle}
+.numpad{display:flex;gap:8px;align-items:center;margin-top:8px}.numpad input{font-size:20px;letter-spacing:.1em}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#e8e6df;color:#111;border-radius:12px;padding:10px 14px;display:flex;gap:12px;align-items:center;z-index:40;box-shadow:0 4px 18px rgba(0,0,0,.5);font-size:15px}
+.toast button{background:#111;color:#fff;padding:6px 12px;font-size:14px;border-radius:8px}
+.swipe{position:relative;overflow:hidden;touch-action:pan-y}.swipe .inner{transition:transform .15s}.swipe.drag .inner{transition:none}
+.swipe .bg{position:absolute;inset:0;display:flex;align-items:center;font-weight:600;font-size:14px;color:#fff;padding:0 16px;opacity:0}
+.swipe .bg.l{background:#d9534f;justify-content:flex-end}.swipe .bg.r{background:#2f80ed;justify-content:flex-start}.legend i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px;vertical-align:middle}
 .tune{position:absolute;left:8px;right:8px;top:calc(56px + env(safe-area-inset-top));background:rgba(20,23,28,.94);border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--ink);max-height:60vh;overflow:auto}
 .tune .field{margin-top:8px}.meter{height:8px;background:#2c333d;border-radius:4px;overflow:hidden;margin-top:4px}.meter i{display:block;height:100%;background:var(--ok);width:0}
 </style>
 </head>
 <body>
 <main>
-<h1><span>cardscan</span><button id="btnSettings" type="button">Settings</button></h1>
+<h1><span>cardscan</span><span><button id="btnTour" type="button" style="margin-right:6px">?</button><button id="btnSettings" type="button">Settings</button></span></h1>
 
 <section class="panel hidden" id="settings">
   <h2>Settings</h2>
@@ -124,6 +129,8 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="field"><label for="hand">Big Snap button on the</label><select id="hand"><option value="right">right (right-handed)</option><option value="left">left (left-handed)</option></select></div>
   <div class="field"><label for="voiceCmd">Voice commands while scanning ("undo", "foil", "not foil", "snap", "pause", "resume", "look up")</label><select id="voiceCmd"><option value="off">Off</option><option value="on">On (uses the microphone)</option></select></div>
   <div class="field"><label for="playset">Extras report: copies beyond this many are extras</label><input type="number" id="playset" value="4" min="1" step="1"></div>
+  <div class="field"><label>Other card languages the reader should try (needs the matching <span class="mono">*.traineddata</span> next to index.html and a database built with <span class="mono">--langs</span>)</label>
+    <div class="row" id="langBoxes" style="gap:6px 14px;margin-top:4px"></div></div>
   <div class="field"><label for="ocrMode">Read card text on the phone (free, offline) when fingerprints don't match</label><select id="ocrMode"><option value="on">On — name, then type line, then bottom line</option><option value="off">Off</option></select></div>
   <div class="field"><label for="strict">Fingerprint matching</label><select id="strict"><option value="normal">Normal</option><option value="strict">Strict (fewer wrong matches)</option><option value="loose">Loose (more matches, more mistakes)</option></select></div>
   <div class="field"><label for="repeats">Sweep mode: a card seen again</label><select id="repeats"><option value="skip">Highlight it, don't add again</option><option value="count">Add it as another copy</option></select></div>
@@ -134,6 +141,8 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="row"><button class="ghost" id="btnDriveConnect" type="button">Connect Google Drive</button><button class="ghost" id="btnDriveRestore" type="button">Restore latest from Drive</button><span class="small" id="driveStat">not connected</span></div>
   <div class="row"><label class="chk"><input type="checkbox" id="driveAuto" checked> back up automatically after every session and daily</label></div>
   <div class="field"><label for="photoMin">Save card photos to Drive for cards at or above ($, 0 = never)</label><input type="number" id="photoMin" value="5" step="1" min="0"></div>
+  <h3>Card pictures offline</h3>
+  <div class="row"><span class="small" id="imgStat">—</span><button class="ghost" id="btnCacheImgs" type="button">Download pictures</button><label class="chk"><input type="checkbox" id="imgAuto" checked> keep new cards' pictures automatically</label></div>
   <h3>Offline database</h3>
   <div class="dbstat"><span id="dbStat">Not loaded</span><span id="hashStat"></span></div>
   <div class="dbstat"><span id="ocrStat">Text reader: loads on first use</span></div>
@@ -184,12 +193,17 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 </section>
 </main>
 
+<div class="sheet" id="tour" role="dialog" aria-modal="true"><div class="box" style="max-height:80vh">
+  <h2 id="tourTitle">Welcome</h2><div id="tourBody" style="font-size:15px;line-height:1.5"></div>
+  <div class="row"><button class="ghost" id="tourPrev" type="button">Back</button><span class="small" id="tourStep" style="flex:1;text-align:center"></span><button id="tourNext" type="button">Next</button></div>
+</div></div>
+<div class="toast hidden" id="toast"><span id="toastText"></span><button type="button" id="toastBtn">Undo</button></div>
 <div class="live hidden" id="live">
   <video id="liveVideo" playsinline muted autoplay></video>
   <canvas id="liveOverlay"></canvas>
   <div class="liveTop">
     <div class="seg"><button id="modeSingle" type="button" class="on">One</button><button id="modeStand" type="button">Stand</button><button id="modeSweep" type="button">Sweep</button><button id="modeLookup" type="button">Look up</button></div>
-    <span><span id="liveCount" class="mono">0</span> · <span id="liveTotal" class="mono" style="color:var(--gold)">$0.00</span> · <span id="liveList"></span></span>
+    <span><span id="liveCount" class="mono">0</span> · <span id="liveTotal" class="mono" style="color:var(--gold)">$0.00</span> · <span id="liveList"></span><br><span id="liveStats" class="small" style="color:#9aa3ad"></span> <span id="savedMark" class="small" style="color:#9aa3ad"></span></span>
     <label class="chk"><input type="checkbox" id="liveFoil"> foil</label>
     <button class="ghost" id="liveMute" type="button" style="padding:4px 8px;font-size:13px;color:#fff;border-color:rgba(255,255,255,.35)">🔊</button>
   </div>
@@ -499,16 +513,37 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 "use strict";
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "cardscan_settings", INV_KEY = "cardscan_inventory", LEARNED_KEY = "cardscan_learned";
-const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on", sortAssist: "off", foilList: "", bulkList: "", voiceCmd: "off", playset: 4, gClientId: "", driveAuto: true, photoMin: 5, drive: {}, foil: {}, hand: "right" },
+const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on", sortAssist: "off", foilList: "", bulkList: "", voiceCmd: "off", playset: 4, gClientId: "", driveAuto: true, photoMin: 5, drive: {}, foil: {}, hand: "right", langs: [], imgAuto: true, tourDone: false },
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
 let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
 inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
 const HEAVY = ["oracle_text", "type_line", "mana_cost", "image", "uri"];     // derivable from the card id; not stored, so thousands of cards fit
 let storageWarned = false;
-function saveInv() {
-  try { localStorage.setItem(INV_KEY, JSON.stringify(inventory.map(r => { const o = Object.assign({}, r); HEAVY.forEach(k => delete o[k]); return o; }))); }
-  catch (e) { if (!storageWarned) { storageWarned = true; setStatus("The phone's storage for this app is full — save a Backup file, then delete or clear cards.", true); } }
+const slimRows = () => inventory.map(r => { const o = Object.assign({}, r); HEAVY.forEach(k => delete o[k]); return o; });
+const kv = { dbp: null, open() { if (this.dbp) return this.dbp; this.dbp = new Promise(res => { try { if (!window.indexedDB) return res(null); const rq = indexedDB.open("cardscan-kv", 1); rq.onupgradeneeded = () => rq.result.createObjectStore("kv"); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); } catch (e) { res(null); } }); return this.dbp; },
+  async set(k, v) { const d = await this.open(); if (!d) return false; return new Promise(res => { const tx = d.transaction("kv", "readwrite"); tx.objectStore("kv").put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => res(false); }); },
+  async get(k) { const d = await this.open(); if (!d) return null; return new Promise(res => { const rq = d.transaction("kv").objectStore("kv").get(k); rq.onsuccess = () => res(rq.result == null ? null : rq.result); rq.onerror = () => res(null); }); } };
+let saveTimer = null, lastSaved = 0;
+function saveInv() {                             // every change: localStorage now, IndexedDB mirror (bigger, survives a full localStorage), a "saved" mark
+  const json = JSON.stringify(slimRows()); let ok = true;
+  try { localStorage.setItem(INV_KEY, json); } catch (e) { ok = false; }
+  kv.set("inventory", json).then(k => { if (!ok && !k && !storageWarned) { storageWarned = true; setStatus("The phone's storage for this app is full — save a Backup file, then delete or clear cards.", true); } });
+  lastSaved = Date.now(); const el = $("savedMark"); if (el) { el.textContent = "saved " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
+  clearTimeout(saveTimer); saveTimer = setTimeout(() => { if (live.on && live.items.some(i => i.row)) sessionSave(); }, 300);
 }
+async function loadInvMirror() {                  // if localStorage lost the inventory (cleared, quota), the IndexedDB copy wins
+  try { const json = await kv.get("inventory"); if (!json) return; const rows = JSON.parse(json); if (rows.length > inventory.length) { inventory = rows; inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; }); try { localStorage.setItem(INV_KEY, json); } catch (e) {} refreshListSelects(); renderInvTotals(); setStatus(`Recovered ${rows.length} cards from the phone's backup copy.`); } } catch (e) {}
+}
+/* the current scanning session (which rows, which thumbnails) is kept too, so closing the app mid-session loses nothing */
+function sessionSave() { try { const items = live.items.filter(i => i.row).slice(0, 300).map(i => ({ id: i.row.id, thumb: i.thumb || "", status: i.status })); kv.set("session", JSON.stringify({ list: live.listName, mode: live.mode, items, t: Date.now() })); } catch (e) {} }
+async function sessionRestore() {
+  try { const s = JSON.parse((await kv.get("session")) || "null"); if (!s || !s.items || !s.items.length || Date.now() - s.t > 36 * 3600 * 1000) return;
+    const rows = s.items.map(i => inventory.find(r => r.id === i.id)).filter(Boolean); if (!rows.length) return;
+    live.restored = s; renderScan(rows); setStatus(`Restored your last session: ${rows.length} cards → "${s.list}". Open the camera to continue it.`); } catch (e) {}
+}
+window.addEventListener("error", e => { try { setStatus("Something went wrong (" + (e.message || "error") + ") — your cards are saved."); } catch (x) {} });
+window.addEventListener("unhandledrejection", e => { try { const m = e.reason && (e.reason.message || String(e.reason)); if (m && !/AbortError|share/i.test(m)) setStatus("Something went wrong (" + m + ") — your cards are saved."); } catch (x) {} });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { try { saveInv(); if (live.on) sessionSave(); } catch (e) {} } });
 function withDetails(r) {                       // fill the derivable fields back in from the database when needed
   if (r.oracle_text == null && r.scryfall_id && db.loaded && db.byId.has(r.scryfall_id)) { const c = dbCard(db.byId.get(r.scryfall_id)); r.oracle_text = c.oracle_text; r.type_line = c.type_line; r.mana_cost = c.mana_cost; }
   if (!r.image && r.scryfall_id) r.image = imageUrl(r.scryfall_id);
@@ -529,6 +564,9 @@ const imageUrl = id => id ? `https://cards.scryfall.io/normal/front/${id[0]}/${i
 /* ================= settings, lists ================= */
 $("apiKey").value = settings.apiKey; $("model").value = settings.model; $("threshold").value = settings.threshold; $("voice").value = settings.voice;
 $("aiMode").value = settings.aiMode; $("strict").value = settings.strict; $("repeats").value = settings.repeats; $("ocrMode").value = settings.ocrMode;
+const LANGS = { ja: ["jpn", "Japanese"], de: ["deu", "German"], fr: ["fra", "French"], es: ["spa", "Spanish"], it: ["ita", "Italian"], pt: ["por", "Portuguese"], ru: ["rus", "Russian"], ko: ["kor", "Korean"], zhs: ["chi_sim", "Chinese (simp.)"] };
+$("langBoxes").innerHTML = Object.entries(LANGS).map(([k, v]) => `<label class="chk"><input type="checkbox" class="langbox" value="${k}" ${settings.langs.includes(k) ? "checked" : ""}> ${v[1]}</label>`).join("");
+$("imgAuto").checked = settings.imgAuto !== false;
 $("sortAssist").value = settings.sortAssist; $("voiceCmd").value = settings.voiceCmd; $("hand").value = settings.hand || "right"; $("live").classList.toggle("lefty", settings.hand === "left"); $("foilGuess").value = settings.foil.off ? "off" : "on"; $("playset").value = settings.playset; $("gClientId").value = settings.gClientId || ""; $("driveAuto").checked = settings.driveAuto !== false; $("photoMin").value = settings.photoMin;
 $("thrLabel").textContent = fmtThr();
 $("btnSettings").onclick = () => $("settings").classList.toggle("hidden");
@@ -536,7 +574,7 @@ $("saveSettings").onclick = () => {
   settings.apiKey = $("apiKey").value.trim(); settings.model = $("model").value.trim() || "claude-sonnet-5";
   settings.threshold = parseFloat($("threshold").value) || 0; settings.autoList = $("autoList").value === NEW_LIST ? "" : $("autoList").value;
   settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; settings.ocrMode = $("ocrMode").value;
-  settings.hand = $("hand").value; $("live").classList.toggle("lefty", settings.hand === "left"); settings.foil.off = $("foilGuess").value === "off"; settings.sortAssist = $("sortAssist").value; settings.foilList = $("foilList").value === NEW_LIST ? "" : $("foilList").value; settings.bulkList = $("bulkList").value === NEW_LIST ? "" : $("bulkList").value; settings.voiceCmd = $("voiceCmd").value;
+  settings.langs = Array.from(document.querySelectorAll(".langbox:checked")).map(b => b.value); ocr.multi = null; settings.imgAuto = $("imgAuto").checked; settings.hand = $("hand").value; $("live").classList.toggle("lefty", settings.hand === "left"); settings.foil.off = $("foilGuess").value === "off"; settings.sortAssist = $("sortAssist").value; settings.foilList = $("foilList").value === NEW_LIST ? "" : $("foilList").value; settings.bulkList = $("bulkList").value === NEW_LIST ? "" : $("bulkList").value; settings.voiceCmd = $("voiceCmd").value;
   settings.playset = Math.max(1, parseInt($("playset").value) || 4); settings.gClientId = $("gClientId").value.trim(); settings.driveAuto = $("driveAuto").checked; settings.photoMin = Math.max(0, parseFloat($("photoMin").value) || 0); saveSettings();
   $("thrLabel").textContent = fmtThr(); $("settingsStatus").textContent = "Saved"; renderInvTotals();
   setTimeout(() => $("settingsStatus").textContent = "", 1500);
@@ -610,8 +648,8 @@ async function loadDb(force) {
       db.byId.set(c[0], i);
       const key = c[5] === "en" ? `${c[2]}/${c[3]}` : `${c[2]}/${c[3]}/${c[5]}`;
       if (!db.byKey.has(key)) db.byKey.set(key, i);
-      const full = c[1].toLowerCase();
-      for (const n of new Set([full, ...full.split("//").map(s => s.trim())])) { if (!db.byName.has(n)) db.byName.set(n, []); db.byName.get(n).push(i); }
+      const full = c[1].toLowerCase(), printed = (c[16] || "").toLowerCase();
+      for (const n of new Set([full, ...full.split("//").map(s => s.trim()), ...(printed ? [printed, ...printed.split("//").map(s => s.trim())] : [])])) { if (!n) continue; if (!db.byName.has(n)) db.byName.set(n, []); db.byName.get(n).push(i); }
     });
     db.names = Array.from(db.byName.keys()); db.loaded = true;
     $("dbStat").textContent = `Prices: ${db.cards.length.toLocaleString()} printings, built ${db.built}`;
@@ -634,8 +672,10 @@ function renderCoverage() {
 }
 function dbCard(i) {
   const c = db.cards[i], o = db.oracle[c[14]] || [];
-  return { id: c[0], name: c[1], set: c[2], set_name: db.sets[c[2]] || c[2].toUpperCase(), collector_number: c[3], rarity: RARITY[c[4]] || c[4], lang: c[5],
-    prices: { usd: c[6], usd_foil: c[7], usd_etched: c[8], eur: c[9], eur_foil: c[10] }, variant: c[11] || "", artist: c[12] || "", released_at: c[13] || "",
+  let prices = { usd: c[6], usd_foil: c[7], usd_etched: c[8], eur: c[9], eur_foil: c[10] }, priceFrom = "";
+  if (c[5] !== "en" && prices.usd == null && prices.usd_foil == null) { const e = db.byKey.get(`${c[2]}/${c[3]}`); if (e != null) { const ec = db.cards[e]; prices = { usd: ec[6], usd_foil: ec[7], usd_etched: ec[8], eur: ec[9], eur_foil: ec[10] }; priceFrom = "en"; } }
+  return { id: c[0], name: c[1], printed_name: c[16] || "", set: c[2], set_name: db.sets[c[2]] || c[2].toUpperCase(), collector_number: c[3], rarity: RARITY[c[4]] || c[4], lang: c[5], priceFrom,
+    prices, variant: c[11] || "", artist: c[12] || "", released_at: c[13] || "",
     finishes: c[15] || "", scryfall_uri: `https://scryfall.com/card/${c[2]}/${encodeURIComponent(c[3])}`, image: imageUrl(c[0]),
     type_line: o[1] || "", mana_cost: o[2] || "", cmc: o[3], colors: (o[4] || "").split("").filter(Boolean), oracle_text: o[5] || "", layout: o[6] || "" };
 }
@@ -651,7 +691,8 @@ function localName(read) {                 // canonical lowercase name in the DB
 const priceSort = (a, b) => (a.prices.usd == null ? 1e9 : a.prices.usd) - (b.prices.usd == null ? 1e9 : b.prices.usd);
 function localPrints(name, set, lang) {
   const n = localName(name); if (!n) return [];
-  return db.byName.get(n).map(dbCard).filter(c => (!set || c.set === set) && (!lang || c.lang === lang)).sort(priceSort);
+  const cards = db.byName.get(n).map(dbCard); const langs = lang ? [lang] : null;
+  return cards.filter(c => (!set || c.set === set) && (!langs || langs.includes(c.lang))).sort(priceSort);
 }
 function popcnt(x) { x = x - ((x >>> 1) & 0x55555555); x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return (((x + (x >>> 4)) & 0x0F0F0F0F) * 0x01010101) >>> 24; }
 function hexToWords(hex) { const w = new Uint32Array(16); for (let i = 0; i < 16; i++) w[i] = parseInt(hex.slice(i * 8, i * 8 + 8), 16) >>> 0; return w; }
@@ -754,7 +795,7 @@ async function resolve(rd) {
   return [prints[0], `${prints.length} printings${scoped ? " in " + set.toUpperCase() : ""} — cheapest assumed, tap to pick`];
 }
 async function printsOf(name) {
-  if (db.loaded) return localPrints(name, null, null);
+  if (db.loaded) return localPrints(name, null, null).filter(c => c.lang === "en" || settings.langs.includes(c.lang));
   const j = await sf(`/cards/search?q=${encodeURIComponent('!"' + name + '"')}&unique=prints&order=released`); return ((j && j.data) || []).map(fromApi);
 }
 async function nameSuggestions(q) {
@@ -839,6 +880,8 @@ function rowFromCard(row, card, foil) {
     type_line: card ? card.type_line : "", mana_cost: card ? card.mana_cost : ""
   }, card ? categorize(card) : { colors: "", color: "Unknown", type: "Unknown", mv: "" });
   if (row.price_at_scan == null && price != null) row.price_at_scan = price;
+  if (card && card.priceFrom === "en" && !/priced as the English/.test(row.review || "")) row.review = [row.review, "foreign printing — priced as the English version"].filter(Boolean).join("; ");
+  if (card && card.printed_name) row.printed_name = card.printed_name;
   row.cond = row.cond || "NM";
   return row;
 }
@@ -891,19 +934,36 @@ function cleanRead(t) {
   t = t.replace(/[^A-Za-z0-9' ,\-]/g, " ").replace(/\s+/g, " ").trim(); const toks = t.split(" ").filter(Boolean);
   while (toks.length && toks[0].length <= 1) toks.shift(); while (toks.length && toks[toks.length - 1].length <= 1) toks.pop(); return toks.join(" ");
 }
-function matchNames(read, k) {                 // -> top-k [{name (db key), score}] by bigram similarity
-  const q = read.toLowerCase(); if (q.length < 3) return []; const top = [];
+function matchNames(read, k) {                 // -> top-k [{name (db key), score}] by bigram similarity (works for any script)
+  const q = read.toLowerCase(); if (q.length < 2) return []; const top = [];
   for (const n of db.names) { if (Math.abs(n.length - q.length) > 6) continue; const s = sim(q, n); if (top.length < (k || 3) || s > top[top.length - 1].score) { top.push({ name: n, score: s }); top.sort((a, b) => b.score - a.score); if (top.length > (k || 3)) top.pop(); } }
   return top;
 }
 const editDist = (a, b) => { const m = a.length, n = b.length, d = []; for (let i = 0; i <= m; i++) { d[i] = [i]; for (let j = 1; j <= n; j++) d[i][j] = i ? 0 : j; } for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; };
 /* name first, then the type line to confirm a close call, then the bottom line for the set code. Returns {card, reason, read} or null. */
+async function ocrMultiWorker() {              // a second reader with the other languages you picked, created on first use
+  const packs = settings.langs.map(k => LANGS[k] && LANGS[k][0]).filter(Boolean); if (!packs.length) return null;
+  if (ocr.multi) return ocr.multi;
+  ocr.multi = (async () => {
+    await ocrWorker(); const base = new URL(".", location.href).href;
+    const local = await fetch(base + packs[0] + ".traineddata", { method: "HEAD" }).then(r => r.ok).catch(() => false);
+    const opts = local ? { workerPath: base + "tesseract-worker.min.js", corePath: base + "tesseract-core-simd-lstm.wasm.js", langPath: base.replace(/\/$/, ""), gzip: false, cacheMethod: "write" } : { cacheMethod: "write" };
+    const w = await Tesseract.createWorker(packs, 1, opts); await w.setParameters({ tessedit_pageseg_mode: "7", preserve_interword_spaces: "1" }); ocrStatus(`ready (+${packs.join(", ")})`); return w;
+  })().catch(e => { ocr.multi = null; console.warn("multi-language reader", e); return null; });
+  return ocr.multi;
+}
+function cleanReadAny(t) { return (t || "").replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim(); }
 async function ocrIdentify(cropCanvas) {
   if (settings.ocrMode === "off" || !db.loaded || ocr.failed) return null;
   const w = await ocrWorker();
   const run = async () => {
-    const titleText = cleanRead(await readRegion(w, regionCanvas(cropCanvas, 0.055, 0.035, 0.745, 0.07, 2)));
-    let top = matchNames(titleText, 5); if (!top.length) return null;
+    let titleText = cleanRead(await readRegion(w, regionCanvas(cropCanvas, 0.055, 0.035, 0.745, 0.07, 2)));
+    let top = matchNames(titleText, 5);
+    if ((!top.length || top[0].score < 0.62) && settings.langs.length) {                    // not an English name it knows: try the other languages
+      const mw = await ocrMultiWorker();
+      if (mw) { const t2 = cleanReadAny(await readRegion(mw, regionCanvas(cropCanvas, 0.055, 0.035, 0.745, 0.07, 2))); const top2 = matchNames(t2, 5); if (top2.length && (!top.length || top2[0].score > top[0].score)) { top = top2; titleText = t2; } }
+    }
+    if (!top.length) return null;
     const guesses = top.map(t => ({ name: db.cards[db.byName.get(t.name)[0]][1], score: t.score }));
     let best = top[0], second = top[1] ? top[1].score : 0;
     if (best.score < 0.62) return { guesses, title: titleText };
@@ -915,7 +975,7 @@ async function ocrIdentify(cropCanvas) {
       if (!rescored.length) return { guesses, title: titleText }; best = rescored[0]; const s2 = rescored[1]; if (s2 && (best.score + 0.08 * best.ts) - (s2.score + 0.08 * s2.ts) < 0.04) return { guesses, title: titleText };
       if (best.score < 0.62) return { guesses, title: titleText };
     }
-    let prints = db.byName.get(best.name).map(dbCard).filter(c => c.lang === "en").sort(priceSort); if (!prints.length) return { guesses, title: titleText };
+    let prints = db.byName.get(best.name).map(dbCard).filter(c => c.lang === "en" || settings.langs.includes(c.lang)).sort(priceSort); if (!prints.length) return { guesses, title: titleText };
     const read = { name: prints[0].name, title: titleText, set: null };
     if (prints.length > 1) {                                            // bottom line: set code picks the printing
       const botText = (await readRegion(w, regionCanvas(cropCanvas, 0.04, 0.90, 0.52, 0.075, 3, true))).toUpperCase();
@@ -1130,7 +1190,7 @@ goBtn.onclick = async () => {
 /* ================= live scanner (one at a time / sweep) ================= */
 const live = { on: false, paused: false, stream: null, track: null, caps: {}, cv: null, det: null, tracker: null, items: [], listName: "Unsorted", lastQuad: null, torch: false, raf: 0, lastT: 0,
                mode: settings.mode || "single", tracks: [], nextTrack: 1, recent: [], retry: null, busy: 0, seen: [], pausedBySheet: false,
-               prevGray: null, steady: 0, hoverCool: false, moving: 0, ic: null, noIC: false };
+               prevGray: null, steady: 0, hoverCool: false, moving: 0, ic: null, noIC: false, armed: true, lastHash: null, lastCaptureT: 0, emptyFrames: 0 };
 const video = $("liveVideo"), overlay = $("liveOverlay"), grab = document.createElement("canvas"), full = document.createElement("canvas");
 function setHint(t) { $("liveHint").textContent = t; }
 const HINTS = { single: "Hold over a card, keep still for a second — it snaps by itself. Or tap 📸.", stand: "Phone on a stand: put a card down, it snaps when the picture settles; swap cards and it snaps the next.", sweep: "Move slowly over the cards. Each one is read as it comes into focus.", lookup: "Look-up: show a card and I'll tell you if you own it. Nothing is added." };
@@ -1144,17 +1204,19 @@ async function startLive() {
   try { if ("speechSynthesis" in window) speechSynthesis.getVoices(); } catch (e) {}
   live.listName = currentList(); settings.lastList = live.listName; saveSettings();
   $("liveList").textContent = live.listName; $("liveCount").textContent = "0"; $("liveLast").innerHTML = ""; $("liveFoil").checked = $("foil").checked;
-  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.sheen = []; live.retry = null; live.rescan = null; live.paused = false; live.prevGray = null; live.steady = 0; live.hoverCool = false; live.ic = null; live.noIC = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden"); $("pick").classList.add("hidden"); $("liveCards").textContent = "Cards (0)";
+  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.sheen = []; live.retry = null; live.rescan = null; live.paused = false; live.prevGray = null;
+  if (live.restored && live.restored.list === live.listName) { live.items = live.restored.items.map(i => { const row = inventory.find(r => r.id === i.id); return row ? { row, thumb: i.thumb, status: "done" } : null; }).filter(Boolean); live.restored = null; } live.steady = 0; live.hoverCool = false; live.ic = null; live.noIC = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden"); $("pick").classList.add("hidden"); $("liveCards").textContent = "Cards (0)";
   $("live").classList.remove("hidden"); setHint("Starting camera…");
   try {
     live.cv = await loadCv(); live.det = makeDetector(live.cv); live.tracker = new live.det.LiveTracker({ lockFrames: 4, clearFrames: 5, iou: 0.8 });
-    live.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 2160 } } });
+    live.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
     video.srcObject = live.stream; await video.play();
     live.track = live.stream.getVideoTracks()[0];
     try { live.caps = live.track.getCapabilities ? live.track.getCapabilities() : {}; } catch (e) { live.caps = {}; }
     $("liveTorch").classList.toggle("hidden", !live.caps.torch);
     await applyCamera();
-    live.on = true; live.lastT = 0; setMode(live.mode); keepAwake(true); voiceStart();
+    live.on = true; live.lastT = 0; live.startT = Date.now(); setMode(live.mode); keepAwake(true); voiceStart(); updateCount(); renderLiveLast(); live.statsTimer = setInterval(liveStats, 30000);
+    live.autoBackupTimer = setInterval(() => { if (live.on && live.items.some(i => i.row)) driveAutoBackup("periodic"); }, 10 * 60 * 1000);
     if (!(settings.camera && settings.camera.trained)) setTimeout(() => { if (live.on) startTrain(); }, 600);
     if (settings.ocrMode !== "off" && db.loaded) ocrWorker().catch(() => {});
     live.raf = requestAnimationFrame(liveLoop);
@@ -1163,14 +1225,16 @@ async function startLive() {
   }
 }
 function stopLive() {
-  live.on = false; cancelAnimationFrame(live.raf); keepAwake(false); voiceStop();
-  if (live.items.some(i => i.row)) driveAutoBackup("session");
+  live.on = false; cancelAnimationFrame(live.raf); keepAwake(false); voiceStop(); clearInterval(live.autoBackupTimer); clearInterval(live.statsTimer); kv.set("session", "null");
+  const sessMin = live.startT ? (Date.now() - live.startT) / 60000 : 0;
+  if (live.items.some(i => i.row)) { driveAutoBackup("session"); if (settings.imgAuto !== false) cacheImages(Array.from(new Set(live.items.filter(i => i.row && i.row.scryfall_id).map(i => i.row.scryfall_id)))).then(imgCacheStatus); }
   if (live.stream) { live.stream.getTracks().forEach(t => t.stop()); live.stream = null; }
   video.srcObject = null; $("live").classList.add("hidden");
   const rows = live.items.filter(i => i.row).map(i => i.row);
   if (rows.length) { renderScan(rows); refreshListSelects(); renderInvTotals();
     const unread = live.items.filter(i => i.status === "unread").length, moved = rows.filter(r => r.list !== live.listName).length, unk = unknownCount(rows);
-    setStatus(`${rows.length} cards scanned → "${live.listName}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unk ? `. ${unk} unknown — red rows below.` : "."}${unread ? ` ${unread} not read.` : ""}`); }
+    const n = rows.reduce((s, r) => s + qtyOf(r), 0);
+    setStatus(`${n} cards in ${sessMin < 1 ? "under a minute" : Math.round(sessMin) + " min"}${sessMin >= 1 ? ` (${Math.round(n / (sessMin / 60))}/h)` : ""} → "${live.listName}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unk ? `. ${unk} unknown — red rows below.` : "."}${unread ? ` ${unread} not read.` : ""}`); }
 }
 $("liveDone").onclick = stopLive;
 /* app-like: no page zoom. Two fingers on the camera view zoom the camera instead (where the phone allows it). */
@@ -1226,7 +1290,9 @@ $("livePlus").onclick = () => {
   const copy = Object.assign({}, last.row, { id: newId(), ts: now() }); inventory.push(copy); saveInv();
   live.items.unshift({ row: copy, thumb: last.thumb, status: "done" }); renderLiveLast(); sound.ok(); updateCount();
 };
-function updateCount() { const rows = live.items.filter(i => i.row); const n = rows.reduce((s, i) => s + qtyOf(i.row), 0), tot = rows.reduce((s, i) => s + (i.row.price || 0) * qtyOf(i.row), 0); $("liveCount").textContent = String(n); $("liveTotal").textContent = "$" + tot.toFixed(2); $("liveCards").textContent = `Cards (${n})`; }
+function updateCount() { const rows = live.items.filter(i => i.row); const n = rows.reduce((s, i) => s + qtyOf(i.row), 0), tot = rows.reduce((s, i) => s + (i.row.price || 0) * qtyOf(i.row), 0); $("liveCount").textContent = String(n); $("liveTotal").textContent = "$" + tot.toFixed(2); $("liveCards").textContent = `Cards (${n})`; liveStats(); }
+function liveStats() { if (!live.startT) return; const mins = (Date.now() - live.startT) / 60000, rows = live.items.filter(i => i.row), n = rows.reduce((s, i) => s + qtyOf(i.row), 0), hits = rows.filter(i => flagged(i.row)).reduce((s, i) => s + qtyOf(i.row), 0);
+  $("liveStats").textContent = `${mins < 1 ? "<1" : Math.round(mins)} min · ${mins >= 1 ? Math.round(n / (mins / 60)) : n} cards/h · ${hits} hit${hits === 1 ? "" : "s"}`; }
 $("liveSnap").onclick = () => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad, true); };
 function beginRescan(row) {
   const go = () => { live.rescan = row; live.tracker.reset(); live.hoverCool = false; if (live.mode === "sweep") setMode("single"); setHint(`Rescanning ${row.unknown ? "the unknown card" : row.name}: hold over it and tap the screen`); };
@@ -1285,9 +1351,12 @@ function liveLoop(t) {
   if (singleLike() || live.retry) {
     let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
     if (live.mode === "stand" && motion > 12) { live.standMoves = (live.standMoves || 0) + 1; if (motion > 25 || live.standMoves >= 2) { live.tracker.reset(); live.hoverCool = false; live.steady = 0; live.standMoves = 0; } } else if (live.mode === "stand") live.standMoves = 0;
+    // re-arm only once the previous card is really gone: no outline AND the guide area no longer looks like a card, for a few frames
+    if (!live.armed && !quad) { if ((live.frameNo = (live.frameNo || 0) + 1) % 3 === 0) { const gq = guideQuad(), gc = regionOf(gctx, gq, s); live.emptyFrames = gc && !looksLikeCard(gc, false).ok ? live.emptyFrames + 1 : 0; if (live.emptyFrames >= 2) { live.armed = true; live.emptyFrames = 0; } } }
     if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
     if (quad) sheenPush(gctx, quad, s); else if (live.sheen && live.sheen.length && motion > 20) sheenReset();
     live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev === "held" && live.items[0] ? itemStatus(live.items[0]) : ev);
+
     if (ev === "lock") { live.hoverCool = true; liveCapture(quad, null, live.retry); }
     else if (ev === "held") setHint(live.mode === "stand" ? "Got it — swap in the next card" : live.mode === "lookup" ? "Show the next card" : "Got it — lift the card and place the next one");
     else if (ev === "cleared") { setHint(live.retry ? "Center the unread card and hold still" : "Next card"); }
@@ -1296,7 +1365,7 @@ function liveLoop(t) {
     if (motion > 9) { live.moving++; if (live.moving >= 2) { live.hoverCool = false; live.steady = 0; } } else live.moving = 0;
     if (!quad && !live.hoverCool && live.busy < 2) {
       const sh = measureSharp(); live.steady = motion < 5 && sh > 4 ? live.steady + 1 : 0;
-      if (live.steady >= 7) { live.steady = 0; live.hoverCool = true; setHint("Snap…"); liveCapture(guideQuad(), null, live.retry, true); }
+      if (live.steady >= 7) { live.steady = 0; live.hoverCool = true; if (handInGuide(gctx, s)) { setHint("Hand in the picture — move it away"); } else { setHint("Snap…"); liveCapture(guideQuad(), null, live.retry, true); } }
       else if (live.steady >= 3) setHint("Hold still… snapping in a moment (or tap 📸)");
     }
     return;
@@ -1361,14 +1430,32 @@ async function hiResFrame() {                 // a real photo from the camera wh
   if (live.mode === "sweep" || live.noIC || !window.ImageCapture || !live.track) return { canvas: full, photo: false };
   try {
     live.ic = live.ic || new ImageCapture(live.track);
-    const blob = await Promise.race([live.ic.takePhoto(), new Promise((_, rej) => setTimeout(() => rej(new Error("slow")), 1800))]);
-    const bmp = await createImageBitmap(blob); const s = Math.min(1, 3200 / Math.max(bmp.width, bmp.height));
+    if (!live.photoOpts) {                          // ask for a modest photo (~2000 px wide): phones like the S25 Ultra would otherwise hand back 200-megapixel files
+      live.photoOpts = {}; try { const pc = await live.ic.getPhotoCapabilities(); const w = pc.imageWidth, h = pc.imageHeight;
+        if (w && w.min != null) { const want = Math.min(Math.max(w.min, 2048), w.max); const step = w.step || 1; live.photoOpts.imageWidth = w.min + Math.round((want - w.min) / step) * step; }
+        if (h && h.min != null) { const want = Math.min(Math.max(h.min, 1536), h.max); const step = h.step || 1; live.photoOpts.imageHeight = h.min + Math.round((want - h.min) / step) * step; } } catch (e) {} }
+    const blob = await Promise.race([live.ic.takePhoto(live.photoOpts), new Promise((_, rej) => setTimeout(() => rej(new Error("slow")), 1800))]);
+    if (blob.size > 12e6) throw new Error("photo too large");
+    let bmp; try { bmp = await createImageBitmap(blob, { resizeWidth: 2400, resizeQuality: "high" }); } catch (e) { bmp = await createImageBitmap(blob); }
+    if (bmp.width * bmp.height > 3200 * 3200) { if (bmp.close) bmp.close(); throw new Error("photo too large"); }
+    const s = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
     const c = document.createElement("canvas"); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); if (bmp.close) bmp.close();
     return { canvas: c, photo: true };
   } catch (e) { live.noIC = true; return { canvas: full, photo: false }; }
 }
+function regionOf(gctx, quad, s) {           // small canvas of a quad's bounding box in the grab frame
+  const xs = quad.map(p => p.x * s), ys = quad.map(p => p.y * s); const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)));
+  const w = Math.min(gctx.canvas.width - x0, Math.ceil(Math.max(...xs)) - x0), h = Math.min(gctx.canvas.height - y0, Math.ceil(Math.max(...ys)) - y0); if (w < 12 || h < 16) return null;
+  const c = document.createElement("canvas"); c.width = 70; c.height = 98; c.getContext("2d").drawImage(gctx.canvas, x0, y0, w, h, 0, 0, 70, 98); return c;
+}
+function handInGuide(gctx, s) { const c = regionOf(gctx, guideQuad(), s); return !!c && cardness(c).skin > 0.15; }
 async function liveCapture(quad, track, retryItem, hover, manual) {
   if (!quad || !live.on) return;
+  const auto = !track && !manual && !retryItem && !live.rescan;
+  if (auto) {                                      // after a capture: not again while the hand is still moving that card
+    const dt = Date.now() - live.lastCaptureT; if (dt < 900) return;
+    if (!live.armed) { const gctx = grab.getContext("2d"), s = grab.width / video.videoWidth; if (handInGuide(gctx, s)) { setHint("Hand in the picture — move it away"); return; } if (dt < 2500) return; }
+  }
   if (!track) { sound.lock(); live.tracker.state = "cooldown"; }
   const rescan = live.rescan; live.rescan = null;
   const cv = live.cv, det = live.det;
@@ -1385,6 +1472,8 @@ async function liveCapture(quad, track, retryItem, hover, manual) {
   catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
   const looks = looksLikeCard(crop, hadOutline);
   if (!looks.ok) { setHint(looks.why); sound.bad(); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
+  if (auto && !live.armed && live.lastHash && hamming(live.lastHash, hash) <= 60) { setHint("Same card — move it fully away to count another copy, or tap +1 same"); return; }
+  if (!track && !rescan) { live.armed = false; live.lastHash = hash; live.lastCaptureT = Date.now(); }
   const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
   // sweep: a card already scanned this session (same fingerprint): another copy if it is lying beside the first one (both in view), otherwise just the same card again
   const seen = track && !retryItem ? live.seen.find(s => hamming(s.hash, hash) <= 60) : null;
@@ -1558,6 +1647,51 @@ $("trainNext").onclick = () => { if (train.busy) return; const steps = trainStep
 $("trainSkip").onclick = () => { $("train").classList.add("hidden"); train.meter = false; live.paused = false; settings.camera.trained = settings.camera.trained || "skipped"; saveSettings(); };
 $("tuneTrain").onclick = startTrain;
 
+/* ================= first-run tour ================= */
+const TOUR = [
+  ["Welcome", "cardscan identifies and prices Magic cards with the camera. This is a two-minute tour; the <b>?</b> at the top brings it back any time."],
+  ["Scanning", "<b>📷 Scan cards</b> opens the camera. <b>One</b>: hover over a card and it snaps by itself. <b>Stand</b>: phone on a stand, swap cards. <b>Sweep</b>: move over a spread and every card is read. <b>Look up</b>: just tells you what a card is and whether you own it. The big round button snaps right now."],
+  ["Colours", "<span style='color:#6fbf8a'>Green</span> identified and priced · <span style='color:#e0b64a'>gold</span> at or above your threshold · <span style='color:#f59e0b'>orange</span> price or printing unsure · <span style='color:#ff7b7b'>red</span> unknown. Tap any row to open it."],
+  ["Fixing a card", "Open a red card: tap one of the name guesses or pictures, or type two letters, then type the number printed bottom-left to pick the printing. For hard ones, <b>Ask the Claude app</b> (your subscription) or the API button."],
+  ["Lists and copies", "Pick a list before scanning; Settings can route hits and foils to their own lists and even say the pile out loud. The same card placed again counts as another copy. Swipe a row left to delete, right to rescan."],
+  ["Saving", "Everything saves on the phone as you go; with Google Drive connected it also backs up after every session, and the Summary, exports and card pictures are a tap away. Train the camera once per table — the first time you open it."]
+];
+let tourAt = 0;
+function tourShow() { const s = TOUR[tourAt]; $("tourTitle").textContent = s[0]; $("tourBody").innerHTML = s[1]; $("tourStep").textContent = `${tourAt + 1} / ${TOUR.length}`; $("tourPrev").disabled = tourAt === 0; $("tourNext").textContent = tourAt === TOUR.length - 1 ? "Let's go" : "Next"; $("tour").classList.add("open"); }
+$("btnTour").onclick = () => { tourAt = 0; tourShow(); };
+$("tourNext").onclick = () => { if (tourAt >= TOUR.length - 1) { $("tour").classList.remove("open"); settings.tourDone = true; saveSettings(); return; } tourAt++; tourShow(); };
+$("tourPrev").onclick = () => { if (tourAt > 0) { tourAt--; tourShow(); } };
+$("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour").classList.remove("open"); settings.tourDone = true; saveSettings(); } });
+if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
+
+/* ================= swipe: left = delete (with undo), right = rescan ================= */
+let toastTimer = null, lastDeleted = null;
+function toast(text, btnLabel, onBtn) { $("toastText").textContent = text; $("toastBtn").classList.toggle("hidden", !btnLabel); $("toastBtn").textContent = btnLabel || ""; $("toastBtn").onclick = () => { $("toast").classList.add("hidden"); if (onBtn) onBtn(); }; $("toast").classList.remove("hidden"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.add("hidden"), 6000); }
+function deleteRow(id) {
+  const idx = inventory.findIndex(r => r.id === id); if (idx < 0) return; const row = inventory[idx];
+  lastDeleted = { row, idx, item: live.items.find(i => i.row === row) || null, itemIdx: live.items.findIndex(i => i.row === row) };
+  inventory.splice(idx, 1); live.items = live.items.filter(i => i.row !== row); live.seen = live.seen.filter(s => !(s.item && s.item.row === row)); lastScanIds = lastScanIds.filter(x => x !== id);
+  saveInv(); rerenderScan(); renderInvTotals(); if (live.on) { renderLiveLast(); updateCount(); if (!$("pick").classList.contains("hidden")) renderPick(); }
+  toast(`Deleted ${row.unknown ? "unknown card" : row.name}`, "Undo", () => { const d = lastDeleted; if (!d) return; inventory.splice(Math.min(d.idx, inventory.length), 0, d.row); if (d.item) live.items.splice(Math.max(0, d.itemIdx), 0, d.item); lastScanIds.push(d.row.id); lastDeleted = null; saveInv(); rerenderScan(); renderInvTotals(); if (live.on) { renderLiveLast(); updateCount(); if (!$("pick").classList.contains("hidden")) renderPick(); } });
+}
+function attachSwipe(container, selector, idOf) {
+  let el = null, x0 = 0, y0 = 0, dx = 0, horiz = null;
+  const wrap = e => { if (!e.classList.contains("swipe")) { const inner = document.createElement("div"); inner.className = "inner"; while (e.firstChild) inner.appendChild(e.firstChild); e.classList.add("swipe"); e.insertAdjacentHTML("afterbegin", `<div class="bg l">Delete</div><div class="bg r">Rescan</div>`); e.appendChild(inner); } return e.querySelector(".inner"); };
+  container.addEventListener("touchstart", e => { const t = e.target.closest(selector); if (!t || e.touches.length !== 1) return; el = t; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; horiz = null; wrap(el); el.classList.add("drag"); }, { passive: true });
+  container.addEventListener("touchmove", e => { if (!el || e.touches.length !== 1) return; dx = e.touches[0].clientX - x0; const dy = e.touches[0].clientY - y0;
+    if (horiz === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) horiz = Math.abs(dx) > Math.abs(dy);
+    if (!horiz) return; if (e.cancelable) e.preventDefault(); const inner = el.querySelector(".inner"); inner.style.transform = `translateX(${dx}px)`;
+    el.querySelector(".bg.l").style.opacity = dx < -20 ? Math.min(1, -dx / 80) : 0; el.querySelector(".bg.r").style.opacity = dx > 20 ? Math.min(1, dx / 80) : 0; }, { passive: false });
+  const end = () => { if (!el) return; const t = el, id = idOf(t), inner = t.querySelector(".inner"); t.classList.remove("drag"); const go = horiz && Math.abs(dx) >= 80, dir = dx < 0 ? "left" : "right";
+    inner.style.transform = ""; t.querySelectorAll(".bg").forEach(b => b.style.opacity = 0); el = null; if (!go || !id) return;
+    swipedAt = Date.now(); if (dir === "left") deleteRow(id); else { const r = inventory.find(x => x.id === id); if (r) { fixRow = r; beginRescan(r); } } };
+  container.addEventListener("touchend", end); container.addEventListener("touchcancel", end);
+}
+attachSwipe($("liveLast"), ".li[data-row]", t => t.dataset.row); attachSwipe($("pickList"), ".li[data-row]", t => t.dataset.row);
+attachSwipe($("list"), ".card[data-id]", t => t.dataset.id); attachSwipe($("hitList"), ".card[data-id]", t => t.dataset.id); attachSwipe($("invList"), ".card[data-id]", t => t.dataset.id);
+/* a swipe must not count as a tap */
+let swipedAt = 0; document.addEventListener("touchend", e => { const t = e.target.closest(".swipe"); if (t && !t.classList.contains("drag")) {} }, { passive: true });
+
 /* ================= rendering ================= */
 function cardHtml(r, qty) {
   qty = (qty || 1) * qtyOf(r);
@@ -1656,9 +1790,9 @@ function renderSummary() {
 }
 $("btnShowInv").onclick = () => { const l = $("invList"); l.classList.toggle("hidden"); $("btnShowInv").textContent = l.classList.contains("hidden") ? "Show all" : "Hide"; if (!l.classList.contains("hidden")) renderInvList(); };
 $("btnClear").onclick = () => { if (confirm("Delete the whole inventory on this phone? Export first if you need it.")) { inventory = []; saveInv(); renderInvTotals(); renderInvList(); $("results").classList.add("hidden"); $("hits").classList.add("hidden"); } };
-document.addEventListener("click", e => { if (selectMode && e.target.closest("#invList")) return; const c = e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); });
+document.addEventListener("click", e => { if (selectMode && e.target.closest("#invList")) return; if (Date.now() - swipedAt < 400) return; const c = e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); });
 document.addEventListener("keydown", e => { if (e.key === "Enter") { const c = e.target.closest && e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); } });
-refreshListSelects(); renderInvTotals();
+refreshListSelects(); renderInvTotals(); loadInvMirror().then(sessionRestore);
 
 /* ================= export ================= */
 const COLS = [["list", "List"], ["qty", "Qty"], ["name", "Card"], ["set", "Set"], ["set_name", "Set name"], ["number", "#"], ["variant", "Variant"], ["rarity", "Rarity"], ["foil", "Foil"], ["cond", "Condition"], ["price", "TCG market ($)"], ["adj", "Adjusted ($)"], ["price_at_scan", "Price at scan ($)"], ["eur", "Cardmarket (€)"], ["flag", "Flag"], ["tier", "Price tier"], ["color", "Color"], ["type", "Type"], ["mv", "Mana value"], ["artist", "Artist"], ["released", "Released"], ["lang", "Lang"], ["review", "Review"], ["notes", "Notes"], ["note", "My note"], ["name_read", "Name as read"], ["via", "Identified by"], ["photo", "Source"], ["ts", "Scanned"], ["uri", "Scryfall"], ["image", "Image"], ["oracle_text", "Oracle text"]];
@@ -1793,6 +1927,7 @@ async function driveBackup(kind) {
 async function driveAutoBackup(reason) {
   if (settings.driveAuto === false || !settings.gClientId || !settings.drive.connected) return;
   if (reason === "daily" && settings.drive.lastBackup && Date.now() - Date.parse(settings.drive.lastBackup) < 20 * 3600 * 1000) return;
+  if (reason === "periodic" && settings.drive.lastBackup && Date.now() - Date.parse(settings.drive.lastBackup) < 9 * 60 * 1000) return;
   try { await driveBackup(reason); } catch (e) {}
 }
 async function driveRestore() {
@@ -1813,6 +1948,7 @@ function photoToDrive(row, cropCanvas) {                           // picture of
   const safe = s => String(s).replace(/[\\/:*?"<>|]/g, "-");
   const letter = (row.name || "?").replace(/^(the|a|an) /i, "").charAt(0).toUpperCase(); const folderName = /[A-Z]/.test(letter) ? letter : "#";
   const fname = `${safe(row.name)} – ${row.set} #${safe(row.number)} – ${row.foil ? "foil" : "nonfoil"} – $${row.price.toFixed(2)} – ${today()}.jpg`;
+  if (photoQueue.length >= 40) photoQueue.shift();
   photoQueue.push({ folderName, fname, dataUrl: cropCanvas.toDataURL("image/jpeg", 0.85) }); drainPhotos();
 }
 async function drainPhotos() {
@@ -1823,6 +1959,17 @@ async function drainPhotos() {
 $("btnDriveConnect").onclick = async () => { try { await driveToken(true); driveStat("connected"); await driveBackup("connect"); } catch (e) { driveStat("could not connect — " + (e.message || e)); } };
 $("btnDriveRestore").onclick = driveRestore;
 setTimeout(() => driveAutoBackup("daily"), 8000);
+
+/* ================= card pictures for offline use ================= */
+async function imgCacheStatus() { try { if (typeof caches === "undefined") { $("imgStat").textContent = "not available in this browser"; return; } const c = await caches.open("cardscan-img"); const ids = Array.from(new Set(inventory.filter(r => r.scryfall_id).map(r => r.scryfall_id))); let have = 0; for (const id of ids) { if (await c.match(imageUrl(id))) have++; } $("imgStat").textContent = `${have} of ${ids.length} cards' pictures on the phone`; } catch (e) { $("imgStat").textContent = "—"; } }
+async function cacheImages(ids, note) {
+  if (typeof caches === "undefined") return 0; const c = await caches.open("cardscan-img"); let done = 0, todo = [];
+  for (const id of ids) { if (!(await c.match(imageUrl(id)))) todo.push(id); }
+  const workers = Array.from({ length: 4 }, async () => { while (todo.length) { const id = todo.shift(); try { const r = await fetch(imageUrl(id), { mode: "no-cors" }); await c.put(imageUrl(id), r); done++; if (note && done % 10 === 0) note(`${done} pictures saved…`); } catch (e) {} } });
+  await Promise.all(workers); return done;
+}
+$("btnCacheImgs").onclick = async () => { $("btnCacheImgs").disabled = true; const ids = Array.from(new Set(inventory.filter(r => r.scryfall_id).map(r => r.scryfall_id))); const n = await cacheImages(ids, m => $("imgStat").textContent = m); $("btnCacheImgs").disabled = false; await imgCacheStatus(); setStatus(`${n} card pictures saved for offline use.`); };
+setTimeout(imgCacheStatus, 3000);
 
 /* ================= database buttons, repricing ================= */
 $("btnDb").onclick = async () => { $("dbStat").textContent = "Downloading…"; await loadDb(true); if (db.loaded) await repriceAll(); };

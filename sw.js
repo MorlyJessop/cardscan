@@ -3,10 +3,14 @@
 const CACHE = "cardscan-v1";
 const PRECACHE = ["./", "./index.html"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)).catch(() => {})); self.skipWaiting(); });
-self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== "cardscan-db").map(k => caches.delete(k))))); self.clients.claim(); });
+self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== "cardscan-db" && k !== "cardscan-img").map(k => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
+  if (url.hostname === "cards.scryfall.io") {                                       // card pictures: keep a copy so lists work offline
+    e.respondWith(caches.open("cardscan-img").then(c => c.match(e.request).then(hit => hit || fetch(e.request).then(r => { if (r.ok || r.type === "opaque") c.put(e.request, r.clone()); return r; }).catch(() => hit))));
+    return;
+  }
   if (url.hostname.endsWith("anthropic.com") || url.hostname.endsWith("scryfall.com") || url.hostname.endsWith("scryfall.io")) return;   // live data: never cached here
   if (url.pathname.endsWith(".gz")) return;                                            // the app caches its databases itself (Cache API), so "Update database" always gets a fresh copy
   if (e.request.cache === "reload" || e.request.cache === "no-store") return;          // explicit refreshes bypass this cache
