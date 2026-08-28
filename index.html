@@ -171,11 +171,17 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <button class="ghost" id="liveMute" type="button" style="padding:4px 8px;font-size:13px;color:#fff;border-color:rgba(255,255,255,.35)">🔊</button>
   </div>
   <div class="liveHint" id="liveHint">Starting camera…</div>
+  <div class="tune hidden" id="train" style="max-height:70vh">
+    <div class="tot"><b id="trainTitle">Train the camera</b><span class="small" id="trainStep"></span></div>
+    <div id="trainBody" style="margin-top:8px;font-size:15px;line-height:1.5"></div>
+    <div class="meter" style="margin-top:10px"><i id="trainBar"></i></div>
+    <div class="row"><button id="trainNext" type="button">Start</button><button class="ghost" id="trainSkip" type="button">Not now</button></div>
+  </div>
   <div class="tune hidden" id="tune">
     <div class="tot"><b>Camera</b><span class="small" id="tuneNote"></span></div>
     <div class="field"><label>Sharpness <span id="sharpVal" class="mono"></span></label><div class="meter"><i id="sharpBar"></i></div></div>
     <div id="tuneControls"></div>
-    <div class="row"><button class="ghost" id="tuneAuto" type="button">Auto-tune focus</button><button class="ghost" id="tuneReset" type="button">Back to auto</button><button class="ghost" id="tuneClose" type="button">Close</button></div>
+    <div class="row"><button id="tuneTrain" type="button">Train camera (1 min)</button><button class="ghost" id="tuneAuto" type="button">Auto-tune focus</button><button class="ghost" id="tuneReset" type="button">Back to auto</button><button class="ghost" id="tuneClose" type="button">Close</button></div>
   </div>
   <div class="pick hidden" id="pick"><div class="tot" style="margin-bottom:8px"><b>This session</b><button class="ghost" id="pickClose" type="button" style="padding:6px 10px;font-size:13px">Close</button></div><div id="pickList"></div></div>
   <div class="liveBottom">
@@ -217,6 +223,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <div class="field"><label for="fixNote">Note</label><input type="text" id="fixNote" placeholder="signed, altered, bent corner…"></div>
     <div class="row">
       <label class="chk"><input type="checkbox" id="fixFoil"> foil</label>
+      <button class="ghost" id="fixRescan" type="button">↻ Rescan this card</button>
       <span style="flex:1"></span>
       <button class="danger" id="fixDelete" type="button">Delete</button>
       <button id="fixDone" type="button">Done</button>
@@ -1020,6 +1027,22 @@ function describeCard(cropCanvas) {         // rough colour words for an unread 
   if (hue >= 200 && hue < 260) return "blue"; if (hue >= 75 && hue < 170) return "green"; if (hue >= 330 || hue < 15) return "red";
   if (hue >= 35 && hue < 65 && l > 0.45) return "gold, maybe multicolor"; if (hue >= 15 && hue < 45) return l > 0.6 ? "tan, maybe a land" : "brown"; return "purple-ish";
 }
+function cardness(cropCanvas) {               // skin share, edge density and border brightness of a crop: hands are smooth skin, tables have no dark border
+  const t = document.createElement("canvas"); t.width = 70; t.height = 98; const g = t.getContext("2d"); g.drawImage(cropCanvas, 0, 0, 70, 98);
+  const d = g.getImageData(0, 0, 70, 98).data, n = 70 * 98; let skin = 0, edges = 0, ring = 0, rn = 0; const lum = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2]; lum[i] = 0.299 * r + 0.587 * gg + 0.114 * b;
+    const x = i % 70, y = (i / 70) | 0; if (x < 2 || x > 67 || y < 3 || y > 94) { ring += lum[i]; rn++; }
+    const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b); if (mx > 90 && r > gg && gg > b && (r - b) > 25 && (mx - mn) / mx > 0.15 && (mx - mn) / mx < 0.75) skin++; }
+  for (let y = 1; y < 97; y++) for (let x = 1; x < 69; x++) { const i = y * 70 + x; if (Math.abs(lum[i] - lum[i - 1]) + Math.abs(lum[i] - lum[i - 70]) > 40) edges++; }
+  return { skin: skin / n, edges: edges / n, ring: ring / rn };
+}
+function looksLikeCard(cropCanvas, hadOutline) {
+  const c = cardness(cropCanvas);
+  if (c.skin > 0.3 && c.edges < 0.12) return { ok: false, why: "That looks like a hand — keep fingers off the card and try again", c };
+  if (c.edges < 0.03) return { ok: false, why: "That doesn't look like a card — center a card in the guide", c };
+  if (!hadOutline && c.ring > 165) return { ok: false, why: "No card border in the guide — center the card and hold still", c };
+  return { ok: true, c };
+}
 function positionWords(nx, ny) { const v = ny < 0.33 ? "top" : ny > 0.66 ? "bottom" : "", h = nx < 0.33 ? "left" : nx > 0.66 ? "right" : ""; return (v && h) ? `${v} ${h}` : v || h || "middle"; }
 
 /* ================= sound & voice ================= */
@@ -1083,7 +1106,7 @@ async function startLive() {
   try { if ("speechSynthesis" in window) speechSynthesis.getVoices(); } catch (e) {}
   live.listName = currentList(); settings.lastList = live.listName; saveSettings();
   $("liveList").textContent = live.listName; $("liveCount").textContent = "0"; $("liveLast").innerHTML = ""; $("liveFoil").checked = $("foil").checked;
-  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.retry = null; live.paused = false; live.prevGray = null; live.steady = 0; live.hoverCool = false; live.ic = null; live.noIC = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden"); $("pick").classList.add("hidden"); $("liveCards").textContent = "Cards (0)";
+  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.retry = null; live.rescan = null; live.paused = false; live.prevGray = null; live.steady = 0; live.hoverCool = false; live.ic = null; live.noIC = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden"); $("pick").classList.add("hidden"); $("liveCards").textContent = "Cards (0)";
   $("live").classList.remove("hidden"); setHint("Starting camera…");
   try {
     live.cv = await loadCv(); live.det = makeDetector(live.cv); live.tracker = new live.det.LiveTracker({ lockFrames: 4, clearFrames: 5, iou: 0.8 });
@@ -1094,6 +1117,7 @@ async function startLive() {
     $("liveTorch").classList.toggle("hidden", !live.caps.torch);
     await applyCamera();
     live.on = true; live.lastT = 0; setMode(live.mode);
+    if (!(settings.camera && settings.camera.trained)) setTimeout(() => { if (live.on) startTrain(); }, 600);
     if (settings.ocrMode !== "off" && db.loaded) ocrWorker().catch(() => {});
     live.raf = requestAnimationFrame(liveLoop);
   } catch (e) {
@@ -1120,7 +1144,12 @@ $("livePlus").onclick = () => {
   live.items.unshift({ row: copy, thumb: last.thumb, status: "done" }); renderLiveLast(); sound.ok(); updateCount();
 };
 function updateCount() { const n = live.items.filter(i => i.row).reduce((s, i) => s + qtyOf(i.row), 0); $("liveCount").textContent = String(n); $("liveCards").textContent = `Cards (${n})`; }
-$("liveSnap").onclick = () => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad); };
+$("liveSnap").onclick = () => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad, true); };
+function beginRescan(row) {
+  const go = () => { live.rescan = row; live.tracker.reset(); live.hoverCool = false; if (live.mode === "sweep") setMode("single"); setHint(`Rescanning ${row.unknown ? "the unknown card" : row.name}: hold over it and tap the screen`); };
+  if (live.on) { closeFix(); go(); } else { closeFix(); startLive().then(() => { if (live.on) go(); }); }
+}
+$("fixRescan").onclick = () => { if (fixRow) beginRescan(fixRow); };
 $("liveUndo").onclick = () => {
   const it = live.items.find(i => i.row); if (!it) { setHint("Nothing to undo."); return; }
   if (qtyOf(it.row) > 1) { it.row.qty = qtyOf(it.row) - 1; setHint(`Removed one copy of ${it.row.name}`); }
@@ -1132,13 +1161,14 @@ $("pickClose").onclick = () => $("pick").classList.add("hidden");
 function renderPick() {
   const items = live.items.filter(i => i.row);
   $("pickList").innerHTML = items.map(i => { const r = i.row, st = rowStatus(r);
-    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[st]};padding-left:8px"><img src="${i.thumb || ""}" alt=""><div><div class="n">${r.unknown ? "Unknown card — " + esc(r.desc || "") : esc(r.name)}</div><div class="sub mono">${r.unknown ? "tap to fix" : `${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}`}</div></div><div class="qty"><button type="button" data-q="-1" data-row="${r.id}">−</button><span class="mono">${qtyOf(r)}</span><button type="button" data-q="1" data-row="${r.id}">+</button></div></div>`; }).join("") || `<div class="empty">Nothing scanned yet.</div>`;
+    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[st]};padding-left:8px"><img src="${i.thumb || ""}" alt=""><div><div class="n">${r.unknown ? "Unknown card — " + esc(r.desc || "") : esc(r.name)}</div><div class="sub mono">${r.unknown ? "tap to fix" : `${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}`}</div></div><div class="qty"><button type="button" data-rescan="${r.id}" title="rescan">↻</button><button type="button" data-q="-1" data-row="${r.id}">−</button><span class="mono">${qtyOf(r)}</span><button type="button" data-q="1" data-row="${r.id}">+</button></div></div>`; }).join("") || `<div class="empty">Nothing scanned yet.</div>`;
 }
 $("pickList").addEventListener("click", e => {
+  const rs = e.target.closest("button[data-rescan]"); if (rs) { const r = inventory.find(x => x.id === rs.dataset.rescan); if (r) { $("pick").classList.add("hidden"); beginRescan(r); } return; }
   const b = e.target.closest("button[data-q]"); if (b) { const r = inventory.find(x => x.id === b.dataset.row); if (!r) return; const nq = qtyOf(r) + (+b.dataset.q); if (nq <= 0) { if (!confirm(`Remove ${r.name}?`)) return; inventory = inventory.filter(x => x !== r); live.items = live.items.filter(i => i.row !== r); } else r.qty = nq; saveInv(); renderPick(); updateCount(); renderLiveLast(); return; }
   const el = e.target.closest(".li[data-row]"); if (el) openFix(el.dataset.row);
 });
-video.addEventListener("click", () => { if (!live.on || live.paused) return; if (live.mode === "single" || live.retry) liveCapture(live.lastQuad || guideQuad(), null, live.retry); });
+video.addEventListener("click", () => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad, true); });
 overlay.addEventListener("click", () => { if (live.mode !== "sweep") video.click(); });
 function viewMap() { const vw = video.videoWidth, vh = video.videoHeight, cw = overlay.clientWidth, ch = overlay.clientHeight; const s = Math.max(cw / vw, ch / vh); return { s, ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2, vw, vh, cw, ch }; }
 function guideQuad() { const m = viewMap(); const h = 0.7 * m.ch / m.s, w = h * 63 / 88, cx = m.vw / 2, cy = m.vh / 2; return [{ x: cx - w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy + h / 2 }, { x: cx - w / 2, y: cy + h / 2 }]; }
@@ -1160,13 +1190,15 @@ function drawOverlay(quad, state) {
 }
 function liveLoop(t) {
   if (!live.on) return; live.raf = requestAnimationFrame(liveLoop);
-  if (live.paused || video.readyState < 2 || !video.videoWidth || t - live.lastT < (live.mode === "sweep" ? 150 : 110)) return;
+  if ((live.paused && !train.meter && $("train").classList.contains("hidden")) || video.readyState < 2 || !video.videoWidth || t - live.lastT < (live.mode === "sweep" ? 150 : 110)) return;
   live.lastT = t;
   const vw = video.videoWidth, vh = video.videoHeight, s = Math.min(1, 640 / Math.max(vw, vh));
   grab.width = Math.round(vw * s); grab.height = Math.round(vh * s);
   const gctx = grab.getContext("2d"); gctx.drawImage(video, 0, 0, grab.width, grab.height);
   if (!$("tune").classList.contains("hidden")) updateSharpMeter();
+  if (train.meter) { const v = measureSharp(); sharpMax = Math.max(sharpMax * 0.995, v, 1); const good = v > 12 && v >= 0.7 * sharpMax; $("trainBar").style.width = Math.min(100, 100 * v / sharpMax) + "%"; $("trainBar").style.background = good ? "#6fbf8a" : "#e0805a"; }
   const motion = frameMotion(gctx);
+  if (!$("train").classList.contains("hidden")) return;                               // training in progress: frames only, no captures
   if (live.mode === "single" || live.retry) {
     let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
     if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
@@ -1220,20 +1252,24 @@ async function hiResFrame() {                 // a real photo from the camera wh
     return { canvas: c, photo: true };
   } catch (e) { live.noIC = true; return { canvas: full, photo: false }; }
 }
-async function liveCapture(quad, track, retryItem, hover) {
+async function liveCapture(quad, track, retryItem, hover, manual) {
   if (!quad || !live.on) return;
   if (!track) { sound.lock(); live.tracker.state = "cooldown"; }
+  const rescan = live.rescan; live.rescan = null;
   const cv = live.cv, det = live.det;
   const shot = await hiResFrame();
   let crop, thumb, hash;
   try {
-    let q = quad, src = shot.canvas;
+    let q = quad, src = shot.canvas, found = null;
     if (shot.photo || hover) {                       // find the card again in the (bigger) picture; fall back to the scaled quad
-      const mat = cv.imread(src); let found = null; try { found = det.detectOne(mat); } catch (e) {} mat.delete();
+      const mat = cv.imread(src); try { found = det.detectOne(mat); } catch (e) {} mat.delete();
       if (found) q = found; else if (shot.photo) { src = full; q = quad; } else q = quad;
     }
-    const mat = cv.imread(src); const m = det.warpCard(mat, q); crop = matToCanvas(cv, m); m.delete(); mat.delete(); thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7); hash = hashCard(crop); }
-  catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } return; }
+    const mat = cv.imread(src); const m = det.warpCard(mat, q); crop = matToCanvas(cv, m); m.delete(); mat.delete(); thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7); hash = hashCard(crop);
+    var hadOutline = !!found || (!hover && !shot.photo); }
+  catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
+  const looks = looksLikeCard(crop, hadOutline);
+  if (!looks.ok) { setHint(looks.why); sound.bad(); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
   const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
   // sweep: a card already scanned this session (same fingerprint): another copy if it is lying beside the first one (both in view), otherwise just the same card again
   const seen = track && !retryItem ? live.seen.find(s => hamming(s.hash, hash) <= 60) : null;
@@ -1241,20 +1277,29 @@ async function liveCapture(quad, track, retryItem, hover) {
   if (seen && !anotherCopy && (settings.repeats !== "count" || !seen.item.row)) { track.item = seen.item; track.seen = true; return; }
   const item = retryItem || { status: "reading", thumb }; if (retryItem) { retryItem.status = "reading"; retryItem.thumb = thumb; } else live.items.unshift(item);
   if (track) track.item = item; renderLiveLast();
-  const seenEntry = { hash, item, track }; if (!retryItem) { live.seen.push(seenEntry); if (live.seen.length > 400) live.seen.shift(); }
-  if (!track) setHint("Reading… place the next card");
+  const seenEntry = { hash, item, track }; if (!retryItem && !rescan) { live.seen.push(seenEntry); if (live.seen.length > 400) live.seen.shift(); }
+  if (!track) setHint(rescan ? "Reading the new picture…" : "Reading… place the next card");
   live.busy++;
   try {
     let row;
     if (seen && seen.item.row) { row = Object.assign({}, seen.item.row, { id: newId(), ts: now(), qty: 1 }); if (row.unknown) { await cropStore.put(row.id, await cropStore.get(seen.item.row.id)); } }
     else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName });
+    if (rescan) {                                 // replace the identity of an existing entry, keep its list / copies / notes
+      const keep = { id: rescan.id, list: rescan.list, qty: rescan.qty, cond: rescan.cond, note: rescan.note, ts: rescan.ts };
+      Object.keys(rescan).forEach(k => { if (!(k in keep)) delete rescan[k]; }); Object.assign(rescan, row, keep);
+      if (row.unknown) { await cropStore.put(rescan.id, await cropStore.get(row.id)); } cropStore.del(row.id);
+      live.items = live.items.filter(i => i !== item); const old = live.items.find(i => i.row === rescan); if (old) { old.thumb = thumb; old.status = "done"; } else live.items.unshift({ row: rescan, thumb, status: "done" });
+      saveInv(); renderLiveLast(); updateCount(); rerenderScan(); renderInvTotals();
+      const st2 = rowStatus(rescan); if (st2 === "unknown") { sound.bad(); setHint("Still unknown — pick a name below"); openFix(rescan.id); } else { sound.ok(); setHint(`Updated: ${rescan.name}`); speak(`${rescan.name}, ${dollars(rescan.price)}`, false); }
+      return;
+    }
     // same card as one already in this session -> one row, more copies
     const twin = !retryItem && live.items.find(i => i !== item && i.row && sameCard(i.row, row));
     if (twin) { twin.row.qty = qtyOf(twin.row) + 1; live.items = live.items.filter(i => i !== item); live.items = [twin, ...live.items.filter(i => i !== twin)]; item.row = twin.row; item.merged = true; saveInv(); if (track) { track.item = twin; track.status = rowStatus(twin.row); } }
     else { inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb; }
     const st = rowStatus(row); if (track && !twin) track.status = st;
     if (twin) { sound.ok(); speak(`${row.name}, ${qtyOf(twin.row)} copies`, false); }
-    else if (st === "unknown") { sound.bad(); speak(`Unknown card. Looks ${row.desc}, ${pos}. Tap it to fix.`, true); }
+    else if (st === "unknown") { sound.bad(); speak(`Unknown card. Looks ${row.desc}, ${pos}. Tap it to fix.`, true); if (manual) openFix(row.id); }
     else if (st === "hit") { sound.hit(); speak(`${row.name}, ${dollars(row.price)}${live.mode === "sweep" ? `, ${pos}` : ""}`, true); }
     else { sound.ok(); speak(`${row.name}, ${dollars(row.price)}`, false); }
     if (retryItem) live.retry = null;
@@ -1282,9 +1327,9 @@ $("liveLast").addEventListener("click", e => {
   const u = e.target.closest(".li.unread"); if (u) { live.retry = live.items[+u.dataset.k]; live.tracker.reset(); setHint("Center that card and hold still — it will retry"); return; }
   const el = e.target.closest(".li[data-row]"); if (el) openFix(el.dataset.row);
 });
-overlay.addEventListener("click", e => { if (live.mode !== "sweep") return; const m = viewMap(); const x = (e.clientX - m.ox) / m.s, y = (e.clientY - m.oy) / m.s;
+overlay.addEventListener("click", e => { if (live.mode !== "sweep") { video.click(); return; } const m = viewMap(); const x = (e.clientX - m.ox) / m.s, y = (e.clientY - m.oy) / m.s;
   const hit = live.tracks.find(t => t.item && t.item.row && x >= Math.min(...t.quad.map(p => p.x)) && x <= Math.max(...t.quad.map(p => p.x)) && y >= Math.min(...t.quad.map(p => p.y)) && y <= Math.max(...t.quad.map(p => p.y)));
-  if (hit) { e.stopPropagation(); openFix(hit.item.row.id); } });
+  if (hit) { e.stopPropagation(); openFix(hit.item.row.id); } else { const q = live.tracks.find(t => x >= Math.min(...t.quad.map(p => p.x)) && x <= Math.max(...t.quad.map(p => p.x)) && y >= Math.min(...t.quad.map(p => p.y)) && y <= Math.max(...t.quad.map(p => p.y))); liveCapture(q ? q.quad : guideQuad(), null, null, !q, true); } });
 
 /* ---- camera tuning: lock focus/exposure so the camera stops hunting ---- */
 async function applyCamera() {
@@ -1313,15 +1358,65 @@ function buildTune() {
   $("tuneAuto").classList.toggle("hidden", !c.focusDistance);
 }
 $("tuneReset").onclick = async () => { settings.camera = {}; saveSettings(); try { await live.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {} buildTune(); };
-$("tuneAuto").onclick = async () => {
-  const cap = live.caps.focusDistance; if (!cap) return; setHint("Auto-tuning focus — hold the phone at your scanning distance…");
-  const ctx = grab.getContext("2d"); const measure = async () => { await sleep(260); ctx.drawImage(video, 0, 0, grab.width, grab.height); const a = measureSharp(); await sleep(120); ctx.drawImage(video, 0, 0, grab.width, grab.height); return (a + measureSharp()) / 2; };
-  let best = null;
-  const tryAt = async d => { try { await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: d }] }); } catch (e) {} const v = await measure(); if (!best || v > best.v) best = { d, v }; };
+async function sampleFrame() { const ctx = grab.getContext("2d"); await sleep(240); ctx.drawImage(video, 0, 0, grab.width, grab.height); const a = measureSharp(); await sleep(110); ctx.drawImage(video, 0, 0, grab.width, grab.height); return (a + measureSharp()) / 2; }
+async function focusSweep(progress) {          // try the whole focus range, keep the sharpest, refine around it
+  const cap = live.caps.focusDistance; if (!cap) return null; let best = null, n = 0;
+  const tryAt = async d => { try { await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: d }] }); } catch (e) {} const v = await sampleFrame(); if (!best || v > best.v) best = { d, v }; if (progress) progress(++n / 14); };
   for (let i = 0; i < 10; i++) await tryAt(cap.min + (cap.max - cap.min) * i / 9);
   const step = (cap.max - cap.min) / 9; for (let i = -2; i <= 2; i++) if (i) await tryAt(Math.min(cap.max, Math.max(cap.min, best.d + i * step / 3)));
-  settings.camera.focusDistance = best.d; saveSettings(); await applyCamera(); buildTune(); setHint("Focus locked. Keep this distance and scan away."); sound.ok();
+  try { await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: best.d }] }); } catch (e) {}
+  return best;
+}
+function centreBrightness() { const ctx = grab.getContext("2d"), w = grab.width, h = grab.height; const d = ctx.getImageData(Math.round(w * 0.3), Math.round(h * 0.3), Math.max(1, Math.round(w * 0.4)), Math.max(1, Math.round(h * 0.4))).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; return s / (d.length / 4); }
+async function exposureTune() {                // nudge exposure compensation until the card area is mid-bright, then keep it
+  const cap = live.caps.exposureCompensation; if (!cap || cap.min == null) return null;
+  let ec = settings.camera.exposureCompensation != null ? settings.camera.exposureCompensation : 0, step = cap.step || 0.5;
+  for (let i = 0; i < 6; i++) { grab.getContext("2d").drawImage(video, 0, 0, grab.width, grab.height); const b = centreBrightness();
+    if (b > 175 && ec - step >= cap.min) ec -= step; else if (b < 110 && ec + step <= cap.max) ec += step; else break;
+    try { await live.track.applyConstraints({ advanced: [{ exposureCompensation: ec }] }); } catch (e) { break; } await sleep(350); }
+  return ec;
+}
+async function zoomTune() {                    // zoom so one card fills about two thirds of the view
+  const cap = live.caps.zoom; if (!cap || cap.min == null) return null; let z = settings.camera.zoom != null ? settings.camera.zoom : 1;
+  for (let i = 0; i < 5; i++) {
+    const ctx = grab.getContext("2d"); ctx.drawImage(video, 0, 0, grab.width, grab.height); let q = null; try { const mat = live.cv.imread(grab); q = live.det.detectOne(mat); mat.delete(); } catch (e) {}
+    if (!q) { zoomTune.note = i === 0 ? "I can't see a card outline — that's fine, zoom left as is." : ""; break; } const hFrac = (Math.max(...q.map(p => p.y)) - Math.min(...q.map(p => p.y))) / grab.height;
+    if (hFrac >= 0.55 && hFrac <= 0.85) { zoomTune.note = ""; break; } const nz = Math.min(cap.max, Math.max(cap.min, z * (hFrac < 0.55 ? 1.25 : 0.8)));
+    if (nz === z) { zoomTune.note = hFrac > 0.85 ? "The card fills the whole view — lift the phone a few centimetres, then tap Next." : "The card is small even at full zoom — bring the phone closer, then tap Next."; break; } z = nz;
+    try { await live.track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) { break; } await sleep(400); }
+  return z;
+}
+$("tuneAuto").onclick = async () => {
+  if (!live.caps.focusDistance) return; setHint("Auto-tuning focus — hold the phone at your scanning distance…");
+  const best = await focusSweep(); if (best) { settings.camera.focusDistance = best.d; saveSettings(); await applyCamera(); buildTune(); setHint("Focus locked. Keep this distance and scan away."); sound.ok(); }
 };
+
+/* ---- training wizard: a one-minute walk-through that locks focus/exposure/zoom for this table and height ---- */
+const train = { step: 0, busy: false };
+const trainSteps = () => {
+  const manual = !!live.caps.focusDistance;
+  return [
+    { title: "Train the camera", body: `Once, for this table. Put <b>one card</b> flat where you'll be scanning, in the light you'll use. Hold the phone the way you'll scan — flat, about a hand's width above the card — and keep it there for the next minute.${manual ? "" : "<br><br><b>Note:</b> this phone's browser doesn't allow locking focus (iPhone). The walk-through will still set your height and light so the camera settles quickly."}`, btn: "Start" },
+    { title: "Focus", body: manual ? "Sweeping the focus range and keeping the sharpest setting… hold still." : "Move the phone slowly up or down until the bar below turns green and stays there. That's your scanning height.", btn: manual ? null : "This is my height", auto: manual ? async p => { const b = await focusSweep(p); if (b) settings.camera.focusDistance = b.d; } : null, meter: !manual },
+    { title: "Light", body: "Checking brightness on the card…", auto: async () => { const ec = await exposureTune(); if (ec != null) settings.camera.exposureCompensation = ec; }, btn: null },
+    { title: "Framing", body: "Zooming so one card fills about two thirds of the view…", auto: async () => { zoomTune.note = ""; const z = await zoomTune(); if (z != null) settings.camera.zoom = z; return zoomTune.note; }, btn: null },
+    { title: "Check", body: "Keep the phone where it is. The bar shows sharpness — green means the reader will get clean text. Lift the card away and put it back once; it should snap within a second.", btn: "Looks good", meter: true },
+    { title: "Done", body: "Saved. These settings load every time you open the camera. If you change table, light or height, run <b>Train camera</b> again from the Camera panel.", btn: "Scan" },
+  ];
+};
+async function trainShow() {
+  const steps = trainSteps(), s = steps[train.step]; if (!s) return trainEnd();
+  $("trainTitle").textContent = s.title; $("trainStep").textContent = `step ${train.step + 1} of ${steps.length}`; $("trainBody").innerHTML = s.body; $("trainBar").style.width = "0%"; $("train").classList.remove("hidden");
+  $("trainNext").textContent = s.btn || "…"; $("trainNext").disabled = !s.btn; train.meter = !!s.meter;
+  if (s.auto) { train.busy = true; let note = ""; try { note = await s.auto(p => { $("trainBar").style.width = Math.round(100 * p) + "%"; }); } catch (e) { console.warn("train", e); } train.busy = false; saveSettings();
+    if (note) { $("trainBody").innerHTML = esc(note); $("trainNext").textContent = "Next"; $("trainNext").disabled = false; return; }
+    train.step++; return trainShow(); }
+}
+function trainEnd() { $("train").classList.add("hidden"); train.meter = false; settings.camera.trained = today(); saveSettings(); applyCamera(); buildTune(); setHint("Camera trained. Hold at that height and scan."); sound.ok(); }
+function startTrain() { if (!live.on) return; live.paused = true; train.step = 0; settings.camera = settings.camera || {}; $("tune").classList.add("hidden"); trainShow().then(() => {}); }
+$("trainNext").onclick = () => { if (train.busy) return; const steps = trainSteps(); if (train.step >= steps.length - 1) { live.paused = false; trainEnd(); return; } train.step++; trainShow(); };
+$("trainSkip").onclick = () => { $("train").classList.add("hidden"); train.meter = false; live.paused = false; settings.camera.trained = settings.camera.trained || "skipped"; saveSettings(); };
+$("tuneTrain").onclick = startTrain;
 
 /* ================= rendering ================= */
 function cardHtml(r, qty) {
