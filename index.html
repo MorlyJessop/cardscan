@@ -83,7 +83,15 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 .li.reading{opacity:.75}.li.error .n{color:var(--warn)}.li.unread .n,.li.unknown .n{color:#ff7b7b}.li.seen{opacity:.6}
 .cand{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);cursor:pointer}
 .cand:first-child{border-top:0}.cand img{width:44px;height:61px;object-fit:cover;border-radius:4px;background:#0f1216}
-.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-top:8px}.legend i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px;vertical-align:middle}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-top:8px}
+.card img.th{width:34px;height:47px;object-fit:cover;border-radius:3px;background:#0f1216;margin-right:8px;float:left}
+.card .q{color:var(--gold);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+.qty{display:inline-flex;align-items:center;gap:6px}.qty button{background:none;border:1px solid var(--line);color:var(--ink);border-radius:8px;width:34px;height:34px;padding:0;font-size:18px;font-weight:500}
+.pick{position:absolute;left:0;right:0;bottom:0;top:calc(56px + env(safe-area-inset-top));background:rgba(20,23,28,.97);overflow:auto;padding:10px 12px calc(12px + env(safe-area-inset-bottom));color:var(--ink)}
+.pick .li{cursor:pointer}
+.selbar{position:sticky;top:0;background:var(--panel);padding:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:2;border-bottom:1px solid var(--line)}
+.card input[type=checkbox]{width:20px;height:20px;margin:0 6px 0 0}
+.numpad{display:flex;gap:8px;align-items:center;margin-top:8px}.numpad input{font-size:20px;letter-spacing:.1em}.legend i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px;vertical-align:middle}
 .tune{position:absolute;left:8px;right:8px;top:calc(56px + env(safe-area-inset-top));background:rgba(20,23,28,.94);border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--ink);max-height:60vh;overflow:auto}
 .tune .field{margin-top:8px}.meter{height:8px;background:#2c333d;border-radius:4px;overflow:hidden;margin-top:4px}.meter i{display:block;height:100%;background:var(--ok);width:0}
 </style>
@@ -135,6 +143,8 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <option value="list">List</option><option value="tier">Price tier</option><option value="color">Color</option>
     <option value="type">Card type</option><option value="rarity">Rarity</option><option value="set">Set</option><option value="cond">Condition</option></select>
     <label class="chk"><input type="checkbox" id="stack" checked> stack copies</label></div>
+  <div class="row"><span class="sub">Sort</span><select id="sortBy" style="flex:1;width:auto"><option value="price">Price, high to low</option><option value="newest">Newest first</option><option value="name">Name</option><option value="set">Set, then number</option></select>
+    <button class="ghost" id="btnSelect" type="button">Select</button></div>
   <div class="row">
     <button class="ghost" id="btnShowInv" type="button">Show all</button>
     <button class="ghost" id="btnSummary" type="button">Summary</button>
@@ -144,7 +154,8 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <option value="csv">CSV — everything</option><option value="xlsx">Excel — everything, one tab per list</option>
     <option value="manabox">ManaBox CSV (import into ManaBox)</option><option value="moxfield">Moxfield CSV</option><option value="deckbox">Deckbox CSV</option>
     <option value="backup">Backup file (inventory + learned fingerprints + settings)</option></select><button class="ghost" id="btnExport" type="button">Save</button></div>
-  <div class="row"><label class="file" style="flex:1;padding:10px" id="restoreDrop"><input type="file" id="restoreFile" accept=".json,application/json"><span>Restore from a backup file</span></label><button class="danger" id="btnClear" type="button">Clear</button></div>
+  <div class="row"><label class="file" style="flex:1;padding:10px" id="restoreDrop"><input type="file" id="restoreFile" accept=".json,application/json"><span>Restore from a backup file</span></label>
+    <label class="file" style="flex:1;padding:10px"><input type="file" id="importFile" accept=".csv,text/csv"><span>Import a ManaBox / TCGplayer CSV</span></label><button class="danger" id="btnClear" type="button">Clear</button></div>
   <div id="summary" class="hidden" style="margin-top:12px"></div>
   <div id="invList" class="hidden" style="margin-top:12px"></div>
 </section>
@@ -166,9 +177,13 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <div id="tuneControls"></div>
     <div class="row"><button class="ghost" id="tuneAuto" type="button">Auto-tune focus</button><button class="ghost" id="tuneReset" type="button">Back to auto</button><button class="ghost" id="tuneClose" type="button">Close</button></div>
   </div>
+  <div class="pick hidden" id="pick"><div class="tot" style="margin-bottom:8px"><b>This session</b><button class="ghost" id="pickClose" type="button" style="padding:6px 10px;font-size:13px">Close</button></div><div id="pickList"></div></div>
   <div class="liveBottom">
     <div id="liveLast"></div>
     <div class="row">
+      <button id="liveSnap" type="button" style="padding:10px 14px">📸 Snap</button>
+      <button class="ghost" id="liveUndo" type="button">Undo</button>
+      <button class="ghost" id="liveCards" type="button">Cards (0)</button>
       <button class="ghost" id="livePause" type="button">Pause</button>
       <button class="ghost" id="livePlus" type="button">+1 same</button>
       <button class="ghost" id="liveTune" type="button">Camera</button>
@@ -191,7 +206,10 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <div class="row hidden" id="fixAiExactRow"><button class="ghost" id="fixAiExact" type="button">Read exact printing with AI (about 1¢)</button></div>
     <div class="field"><label for="fixName">Name</label><input type="text" id="fixName" autocomplete="off" placeholder="type a few letters…"></div>
     <div class="list hidden" id="fixNames"></div>
-    <div class="field"><label>Printing</label><div class="list" id="fixPrints"><div class="empty" style="padding:10px 0">Pick a name to load printings</div></div></div>
+    <div class="field"><label>Printing</label>
+      <div class="numpad"><span class="small">Number printed bottom-left:</span><input type="text" id="fixNum" inputmode="numeric" placeholder="e.g. 0103" style="width:130px"><span class="small" id="fixNumNote"></span></div>
+      <div class="list" id="fixPrints"><div class="empty" style="padding:10px 0">Pick a name to load printings</div></div></div>
+    <div class="field"><label>Copies</label><div class="qty"><button type="button" id="fixQtyMinus">−</button><span class="mono" id="fixQty">1</span><button type="button" id="fixQtyPlus">+</button></div></div>
     <div class="row">
       <div class="field" style="flex:1;margin:0"><label for="fixList">List</label><select id="fixList"></select></div>
       <div class="field" style="flex:1;margin:0"><label for="fixCond">Condition</label><select id="fixCond"><option value="NM">Near mint</option><option value="LP">Lightly played</option><option value="MP">Moderately played</option><option value="HP">Heavily played</option><option value="DMG">Damaged</option></select></div>
@@ -509,6 +527,8 @@ function handleNewList(sel, fallback) {
 $("scanList").onchange = () => { settings.lastList = handleNewList($("scanList"), settings.lastList); saveSettings(); };
 $("autoList").onchange = () => { settings.autoList = handleNewList($("autoList"), ""); saveSettings(); };
 const flagged = r => r.price != null && r.price >= settings.threshold;
+const qtyOf = r => Math.max(1, r.qty || 1);
+const sameCard = (a, b) => !a.unknown && !b.unknown && a.scryfall_id && a.scryfall_id === b.scryfall_id && !!a.foil === !!b.foil && (a.cond || "NM") === (b.cond || "NM") && (a.list || "Unsorted") === (b.list || "Unsorted");
 /* red: not identified · orange: identified but price missing or printing unsure · green: identified and priced · gold: at/above threshold */
 const rowStatus = r => r.unknown ? "unknown" : r.price == null ? "unpriced" : flagged(r) ? "hit" : /printings|not verified|did not match|mismatch/.test(r.review || "") ? "check" : "ok";
 const STATUS_COLOR = { unknown: "#ff5c5c", unpriced: "#f59e0b", check: "#f59e0b", ok: "#6fbf8a", hit: "#e0b64a" };
@@ -595,6 +615,7 @@ function nearestHashes(hex, k) {           // -> top-k [{id, dist}] over fingerp
   k = k || 3; const q = hexToWords(hex); const top = [];
   const consider = (id, words, off) => { const worst = top.length === k ? top[k - 1].dist : 999; let d = 0;
     for (let w = 0; w < 16; w++) { d += popcnt(q[w] ^ words[off + w]); if (d >= worst) return; }
+    const dup = top.findIndex(t => t.id === id); if (dup >= 0) { if (top[dup].dist <= d) return; top.splice(dup, 1); }   // same card known by several pictures: keep its best
     let i = top.length; while (i > 0 && top[i - 1].dist > d) i--; top.splice(i, 0, { id, dist: d }); if (top.length > k) top.pop(); };
   if (db.hashes) for (let n = 0; n < db.hashIds.length; n++) consider(db.hashIds[n], db.hashes, n * 16);
   for (const [h, id] of Object.entries(learned)) consider(id, hexToWords(h), 0);
@@ -838,18 +859,19 @@ async function ocrIdentify(cropCanvas) {
   const w = await ocrWorker();
   const run = async () => {
     const titleText = cleanRead(await readRegion(w, regionCanvas(cropCanvas, 0.055, 0.035, 0.745, 0.07, 2)));
-    let top = matchNames(titleText, 3); if (!top.length) return null;
+    let top = matchNames(titleText, 5); if (!top.length) return null;
+    const guesses = top.map(t => ({ name: db.cards[db.byName.get(t.name)[0]][1], score: t.score }));
     let best = top[0], second = top[1] ? top[1].score : 0;
-    if (best.score < 0.62) return null;
+    if (best.score < 0.62) return { guesses, title: titleText };
     if (best.score - second < 0.06 || best.score < 0.75) {           // close call: let the type line decide
       const typeText = (await readRegion(w, regionCanvas(cropCanvas, 0.055, 0.555, 0.745, 0.065, 2))).toLowerCase();
       const words = typeText.split(/[^a-z]+/).filter(x => x.length > 3);
       const scoreType = n => { const c = dbCard(db.byName.get(n)[0]); const tl = (c.type_line || "").toLowerCase(); return words.filter(x => tl.includes(x)).length; };
       const rescored = top.filter(t => t.score >= 0.55).map(t => ({ ...t, ts: scoreType(t.name) })).sort((a, b) => (b.score + 0.08 * b.ts) - (a.score + 0.08 * a.ts));
-      if (!rescored.length) return null; best = rescored[0]; const s2 = rescored[1]; if (s2 && (best.score + 0.08 * best.ts) - (s2.score + 0.08 * s2.ts) < 0.04) return null;
-      if (best.score < 0.62) return null;
+      if (!rescored.length) return { guesses, title: titleText }; best = rescored[0]; const s2 = rescored[1]; if (s2 && (best.score + 0.08 * best.ts) - (s2.score + 0.08 * s2.ts) < 0.04) return { guesses, title: titleText };
+      if (best.score < 0.62) return { guesses, title: titleText };
     }
-    let prints = db.byName.get(best.name).map(dbCard).filter(c => c.lang === "en").sort(priceSort); if (!prints.length) return null;
+    let prints = db.byName.get(best.name).map(dbCard).filter(c => c.lang === "en").sort(priceSort); if (!prints.length) return { guesses, title: titleText };
     const read = { name: prints[0].name, title: titleText, set: null };
     if (prints.length > 1) {                                            // bottom line: set code picks the printing
       const botText = (await readRegion(w, regionCanvas(cropCanvas, 0.04, 0.90, 0.52, 0.075, 3, true))).toUpperCase();
@@ -867,11 +889,11 @@ async function ocrIdentify(cropCanvas) {
 
 /* One crop -> row. Fingerprints (offline, instant) first. Unknown cards become red rows that keep their crop;
    Claude only runs when the user asks (or when AI use is set to automatic). */
-async function unknownRow(cropCanvas, hash, opts) {
+async function unknownRow(cropCanvas, hash, opts, guesses, title) {
   const cands = nearestHashes(hash, 3);
   const row = { id: newId(), ts: now(), photo: opts.photo, unknown: true, name: "Unknown card", name_read: "", set: "", number: "", rarity: "", foil: !!opts.foil, price: null, price_field: "",
     review: "not identified — tap to pick a match or ask AI", notes: "", hash, via: "", cond: "NM", list: opts.list, list0: opts.list,
-    candidates: cands.map(c => ({ id: c.id, dist: c.dist })), color: "Unknown", type: "Unknown", desc: describeCard(cropCanvas) };
+    candidates: cands.map(c => ({ id: c.id, dist: c.dist })), guesses: guesses || [], title_read: title || "", color: "Unknown", type: "Unknown", desc: describeCard(cropCanvas) };
   await cropStore.put(row.id, cropCanvas.toDataURL("image/jpeg", 0.85));
   return row;
 }
@@ -911,14 +933,16 @@ async function identifyCrop(cropCanvas, opts) {
   if (m) { const row = await knownRow(m, hash, opts); if (row) { row.dist = m.dist; if (how) row.notes = [row.notes, `matched ${how}`].filter(Boolean).join("; ");
       if (m.dist <= acceptDist() - 10 && !learned[hash]) learn(hash, m.id);      // remember this phone's own picture of the card: next time it matches even closer
       return row; } }
+  let guesses = null, title = "";
   try {
     const o = await ocrIdentify(cropCanvas);
-    if (o) { const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: o.read.title, notes: "", review: o.reason, hash, via: "ocr" }, o.card, opts.foil);
+    if (o && o.card) { const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: o.read.title, notes: "", review: o.reason, hash, via: "ocr" }, o.card, opts.foil);
       row.list = (settings.autoList && flagged(row)) ? settings.autoList : opts.list;
       if (o.exact) learn(hash, o.card.id); else await cropStore.put(row.id, cropCanvas.toDataURL("image/jpeg", 0.85));
       return row; }
+    if (o && o.guesses) { guesses = o.guesses; title = o.title; }
   } catch (e) { console.warn("ocr", e); }
-  const row = await unknownRow(cropCanvas, hash, opts);
+  const row = await unknownRow(cropCanvas, hash, opts, guesses, title);
   if (settings.aiMode === "auto" && settings.apiKey) { try { await aiIdentify(row); } catch (e) { row.review = "AI could not read it: " + (e.message || e); } }
   return row;
 }
@@ -1045,11 +1069,12 @@ goBtn.onclick = async () => {
 
 /* ================= live scanner (one at a time / sweep) ================= */
 const live = { on: false, paused: false, stream: null, track: null, caps: {}, cv: null, det: null, tracker: null, items: [], listName: "Unsorted", lastQuad: null, torch: false, raf: 0, lastT: 0,
-               mode: settings.mode || "single", tracks: [], nextTrack: 1, recent: [], retry: null, busy: 0, seen: [], pausedBySheet: false };
+               mode: settings.mode || "single", tracks: [], nextTrack: 1, recent: [], retry: null, busy: 0, seen: [], pausedBySheet: false,
+               prevGray: null, steady: 0, hoverCool: false, moving: 0, ic: null, noIC: false };
 const video = $("liveVideo"), overlay = $("liveOverlay"), grab = document.createElement("canvas"), full = document.createElement("canvas");
 function setHint(t) { $("liveHint").textContent = t; }
 function setMode(m) { live.mode = m; settings.mode = m; saveSettings(); $("modeSingle").classList.toggle("on", m === "single"); $("modeSweep").classList.toggle("on", m === "sweep"); live.tracks = []; if (live.tracker) live.tracker.reset();
-  setHint(m === "sweep" ? "Move slowly over the cards. Each one is read as it comes into focus." : "Lay a card on a plain light surface and point at it — it scans when steady. Tap to force."); }
+  setHint(m === "sweep" ? "Move slowly over the cards. Each one is read as it comes into focus." : "Hold over a card, keep still for a second — it snaps by itself. Or tap 📸."); }
 $("modeSingle").onclick = () => setMode("single"); $("modeSweep").onclick = () => setMode("sweep");
 $("btnLive").onclick = startLive;
 async function startLive() {
@@ -1058,7 +1083,7 @@ async function startLive() {
   try { if ("speechSynthesis" in window) speechSynthesis.getVoices(); } catch (e) {}
   live.listName = currentList(); settings.lastList = live.listName; saveSettings();
   $("liveList").textContent = live.listName; $("liveCount").textContent = "0"; $("liveLast").innerHTML = ""; $("liveFoil").checked = $("foil").checked;
-  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.retry = null; live.paused = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden");
+  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.retry = null; live.paused = false; live.prevGray = null; live.steady = 0; live.hoverCool = false; live.ic = null; live.noIC = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden"); $("pick").classList.add("hidden"); $("liveCards").textContent = "Cards (0)";
   $("live").classList.remove("hidden"); setHint("Starting camera…");
   try {
     live.cv = await loadCv(); live.det = makeDetector(live.cv); live.tracker = new live.det.LiveTracker({ lockFrames: 4, clearFrames: 5, iou: 0.8 });
@@ -1094,7 +1119,25 @@ $("livePlus").onclick = () => {
   const copy = Object.assign({}, last.row, { id: newId(), ts: now() }); inventory.push(copy); saveInv();
   live.items.unshift({ row: copy, thumb: last.thumb, status: "done" }); renderLiveLast(); sound.ok(); updateCount();
 };
-function updateCount() { $("liveCount").textContent = String(live.items.filter(i => i.row).length); }
+function updateCount() { const n = live.items.filter(i => i.row).reduce((s, i) => s + qtyOf(i.row), 0); $("liveCount").textContent = String(n); $("liveCards").textContent = `Cards (${n})`; }
+$("liveSnap").onclick = () => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad); };
+$("liveUndo").onclick = () => {
+  const it = live.items.find(i => i.row); if (!it) { setHint("Nothing to undo."); return; }
+  if (qtyOf(it.row) > 1) { it.row.qty = qtyOf(it.row) - 1; setHint(`Removed one copy of ${it.row.name}`); }
+  else { inventory = inventory.filter(r => r !== it.row); cropStore.del(it.row.id); live.items = live.items.filter(i => i !== it); live.seen = live.seen.filter(s => s.item !== it); setHint(`Removed ${it.row.name}`); }
+  saveInv(); renderLiveLast(); updateCount(); if (!$("pick").classList.contains("hidden")) renderPick();
+};
+$("liveCards").onclick = () => { const p = $("pick"); p.classList.toggle("hidden"); if (!p.classList.contains("hidden")) renderPick(); };
+$("pickClose").onclick = () => $("pick").classList.add("hidden");
+function renderPick() {
+  const items = live.items.filter(i => i.row);
+  $("pickList").innerHTML = items.map(i => { const r = i.row, st = rowStatus(r);
+    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[st]};padding-left:8px"><img src="${i.thumb || ""}" alt=""><div><div class="n">${r.unknown ? "Unknown card — " + esc(r.desc || "") : esc(r.name)}</div><div class="sub mono">${r.unknown ? "tap to fix" : `${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}`}</div></div><div class="qty"><button type="button" data-q="-1" data-row="${r.id}">−</button><span class="mono">${qtyOf(r)}</span><button type="button" data-q="1" data-row="${r.id}">+</button></div></div>`; }).join("") || `<div class="empty">Nothing scanned yet.</div>`;
+}
+$("pickList").addEventListener("click", e => {
+  const b = e.target.closest("button[data-q]"); if (b) { const r = inventory.find(x => x.id === b.dataset.row); if (!r) return; const nq = qtyOf(r) + (+b.dataset.q); if (nq <= 0) { if (!confirm(`Remove ${r.name}?`)) return; inventory = inventory.filter(x => x !== r); live.items = live.items.filter(i => i.row !== r); } else r.qty = nq; saveInv(); renderPick(); updateCount(); renderLiveLast(); return; }
+  const el = e.target.closest(".li[data-row]"); if (el) openFix(el.dataset.row);
+});
 video.addEventListener("click", () => { if (!live.on || live.paused) return; if (live.mode === "single" || live.retry) liveCapture(live.lastQuad || guideQuad(), null, live.retry); });
 overlay.addEventListener("click", () => { if (live.mode !== "sweep") video.click(); });
 function viewMap() { const vw = video.videoWidth, vh = video.videoHeight, cw = overlay.clientWidth, ch = overlay.clientHeight; const s = Math.max(cw / vw, ch / vh); return { s, ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2, vw, vh, cw, ch }; }
@@ -1123,14 +1166,22 @@ function liveLoop(t) {
   grab.width = Math.round(vw * s); grab.height = Math.round(vh * s);
   const gctx = grab.getContext("2d"); gctx.drawImage(video, 0, 0, grab.width, grab.height);
   if (!$("tune").classList.contains("hidden")) updateSharpMeter();
+  const motion = frameMotion(gctx);
   if (live.mode === "single" || live.retry) {
     let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
     if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
     live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev === "held" && live.items[0] ? itemStatus(live.items[0]) : ev);
-    if (ev === "lock") liveCapture(quad, null, live.retry);
+    if (ev === "lock") { live.hoverCool = true; liveCapture(quad, null, live.retry); }
     else if (ev === "held") setHint("Got it — lift the card and place the next one");
-    else if (ev === "cleared") setHint(live.retry ? "Center the unread card and hold still" : "Next card");
+    else if (ev === "cleared") { setHint(live.retry ? "Center the unread card and hold still" : "Next card"); }
     else if (ev === "tracking") setHint("Hold still…");
+    // hover: no outline found, but the view is still and sharp -> take the guide area as the card
+    if (motion > 9) { live.moving++; if (live.moving >= 2) { live.hoverCool = false; live.steady = 0; } } else live.moving = 0;
+    if (!quad && !live.hoverCool && live.busy < 2) {
+      const sh = measureSharp(); live.steady = motion < 5 && sh > 4 ? live.steady + 1 : 0;
+      if (live.steady >= 7) { live.steady = 0; live.hoverCool = true; setHint("Snap…"); liveCapture(guideQuad(), null, live.retry, true); }
+      else if (live.steady >= 3) setHint("Hold still… snapping in a moment (or tap 📸)");
+    }
     return;
   }
   // sweep: many cards per frame, track them, capture each once when it is steady and sharp
@@ -1153,34 +1204,61 @@ function liveLoop(t) {
   live.tracks = live.tracks.filter(x => t - x.last < 1200);
   drawOverlay(null, null);
 }
-async function liveCapture(quad, track, retryItem) {
+function frameMotion(gctx) {                 // mean absolute change between this frame and the last one (0..255), on a tiny grey copy
+  const t = document.createElement("canvas"); t.width = 48; t.height = 27; t.getContext("2d").drawImage(gctx.canvas, 0, 0, 48, 27);
+  const d = t.getContext("2d").getImageData(0, 0, 48, 27).data, g = new Float32Array(48 * 27); for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  let m = 0; if (live.prevGray) { for (let i = 0; i < g.length; i++) m += Math.abs(g[i] - live.prevGray[i]); m /= g.length; } live.prevGray = g; return m;
+}
+async function hiResFrame() {                 // a real photo from the camera when the browser allows it (Android); else the video frame
+  full.width = video.videoWidth; full.height = video.videoHeight; full.getContext("2d").drawImage(video, 0, 0);
+  if (live.mode === "sweep" || live.noIC || !window.ImageCapture || !live.track) return { canvas: full, photo: false };
+  try {
+    live.ic = live.ic || new ImageCapture(live.track);
+    const blob = await Promise.race([live.ic.takePhoto(), new Promise((_, rej) => setTimeout(() => rej(new Error("slow")), 1800))]);
+    const bmp = await createImageBitmap(blob); const s = Math.min(1, 3200 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height); if (bmp.close) bmp.close();
+    return { canvas: c, photo: true };
+  } catch (e) { live.noIC = true; return { canvas: full, photo: false }; }
+}
+async function liveCapture(quad, track, retryItem, hover) {
   if (!quad || !live.on) return;
   if (!track) { sound.lock(); live.tracker.state = "cooldown"; }
   const cv = live.cv, det = live.det;
-  full.width = video.videoWidth; full.height = video.videoHeight; full.getContext("2d").drawImage(video, 0, 0);
+  const shot = await hiResFrame();
   let crop, thumb, hash;
-  try { const mat = cv.imread(full); const m = det.warpCard(mat, quad); crop = matToCanvas(cv, m); m.delete(); mat.delete(); thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7); hash = hashCard(crop); }
+  try {
+    let q = quad, src = shot.canvas;
+    if (shot.photo || hover) {                       // find the card again in the (bigger) picture; fall back to the scaled quad
+      const mat = cv.imread(src); let found = null; try { found = det.detectOne(mat); } catch (e) {} mat.delete();
+      if (found) q = found; else if (shot.photo) { src = full; q = quad; } else q = quad;
+    }
+    const mat = cv.imread(src); const m = det.warpCard(mat, q); crop = matToCanvas(cv, m); m.delete(); mat.delete(); thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7); hash = hashCard(crop); }
   catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } return; }
   const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
-  // sweep: a card already scanned this session (same fingerprint) is highlighted in its colour, not added again
+  // sweep: a card already scanned this session (same fingerprint): another copy if it is lying beside the first one (both in view), otherwise just the same card again
   const seen = track && !retryItem ? live.seen.find(s => hamming(s.hash, hash) <= 60) : null;
-  if (seen && (settings.repeats !== "count" || !seen.item.row)) { track.item = seen.item; track.seen = true; return; }
+  const anotherCopy = seen && seen.track && seen.track !== track && live.tracks.includes(seen.track) && seen.item.row;
+  if (seen && !anotherCopy && (settings.repeats !== "count" || !seen.item.row)) { track.item = seen.item; track.seen = true; return; }
   const item = retryItem || { status: "reading", thumb }; if (retryItem) { retryItem.status = "reading"; retryItem.thumb = thumb; } else live.items.unshift(item);
   if (track) track.item = item; renderLiveLast();
-  const seenEntry = { hash, item }; if (!retryItem) { live.seen.push(seenEntry); if (live.seen.length > 400) live.seen.shift(); }
+  const seenEntry = { hash, item, track }; if (!retryItem) { live.seen.push(seenEntry); if (live.seen.length > 400) live.seen.shift(); }
   if (!track) setHint("Reading… place the next card");
   live.busy++;
   try {
     let row;
-    if (seen && seen.item.row) { row = Object.assign({}, seen.item.row, { id: newId(), ts: now() }); if (row.unknown) { await cropStore.put(row.id, await cropStore.get(seen.item.row.id)); } }
+    if (seen && seen.item.row) { row = Object.assign({}, seen.item.row, { id: newId(), ts: now(), qty: 1 }); if (row.unknown) { await cropStore.put(row.id, await cropStore.get(seen.item.row.id)); } }
     else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName });
-    inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb;
-    const st = rowStatus(row); if (track) track.status = st;
-    if (st === "unknown") { sound.bad(); speak(`Unknown card. Looks ${row.desc}, ${pos}. Tap it to fix.`, true); }
+    // same card as one already in this session -> one row, more copies
+    const twin = !retryItem && live.items.find(i => i !== item && i.row && sameCard(i.row, row));
+    if (twin) { twin.row.qty = qtyOf(twin.row) + 1; live.items = live.items.filter(i => i !== item); live.items = [twin, ...live.items.filter(i => i !== twin)]; item.row = twin.row; item.merged = true; saveInv(); if (track) { track.item = twin; track.status = rowStatus(twin.row); } }
+    else { inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb; }
+    const st = rowStatus(row); if (track && !twin) track.status = st;
+    if (twin) { sound.ok(); speak(`${row.name}, ${qtyOf(twin.row)} copies`, false); }
+    else if (st === "unknown") { sound.bad(); speak(`Unknown card. Looks ${row.desc}, ${pos}. Tap it to fix.`, true); }
     else if (st === "hit") { sound.hit(); speak(`${row.name}, ${dollars(row.price)}${live.mode === "sweep" ? `, ${pos}` : ""}`, true); }
     else { sound.ok(); speak(`${row.name}, ${dollars(row.price)}`, false); }
     if (retryItem) live.retry = null;
-    updateCount();
+    updateCount(); if (!$("pick").classList.contains("hidden")) renderPick();
   } catch (e) {
     item.status = "unread"; item.error = e.message || String(e); item.desc = describeCard(crop); item.pos = pos;
     if (track) track.status = "unread"; live.seen = live.seen.filter(s => s !== seenEntry);
@@ -1197,7 +1275,7 @@ function renderLiveLast() {
     if (i.status === "unread") return `<div class="li unread" data-k="${k}"><img src="${i.thumb}" alt=""><div><div class="n">Not read — ${esc(i.desc || "")}, ${esc(i.pos || "")}</div><div class="sub">${esc(i.error)} · tap to retry</div></div><div></div></div>`;
     const r = i.row;
     if (r.unknown) return `<div class="li unknown" data-row="${r.id}"><img src="${i.thumb}" alt=""><div><div class="n">Unknown card — ${esc(r.desc || "")}</div><div class="sub">tap to pick a match or ask AI</div></div><div></div></div>`;
-    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[rowStatus(r)]};padding-left:8px"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? ` · instant${r.dist != null ? " " + Math.max(0, Math.round(100 - r.dist / 2.56)) + "%" : ""}` : r.via === "ocr" ? " · read" : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
+    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[rowStatus(r)]};padding-left:8px"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}${qtyOf(r) > 1 ? ` <span style="color:var(--gold)">×${qtyOf(r)}</span>` : ""}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? ` · instant${r.dist != null ? " " + Math.max(0, Math.round(100 - r.dist / 2.56)) + "%" : ""}` : r.via === "ocr" ? " · read" : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
   }).join("");
 }
 $("liveLast").addEventListener("click", e => {
@@ -1247,9 +1325,10 @@ $("tuneAuto").onclick = async () => {
 
 /* ================= rendering ================= */
 function cardHtml(r, qty) {
-  const st = rowStatus(r), badge = qty > 1 ? `<span class="mono" style="color:var(--gold)"> ×${qty}</span>` : "";
-  if (r.unknown) return `<div class="card s-unknown" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div><div class="n">Unknown card${r.desc ? " — " + esc(r.desc) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.foil ? " · foil" : ""} · tap to pick a match or ask AI</div>${r.review && !/not identified/.test(r.review) ? `<div class="rev">${esc(r.review)}</div>` : ""}</div><div class="price">—</div></div>`;
-  return `<div class="card s-${st}" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div><div class="n">${esc(r.name)}${badge}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}${r.variant ? " · " + esc(r.variant) : ""}${r.set_name ? " · " + esc(r.set_name) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.cond && r.cond !== "NM" ? " · " + esc(r.cond) : ""}${r.color ? " · " + esc(r.color) : ""}${r.type ? " · " + esc(r.type) : ""}${r.rarity ? " · " + esc(r.rarity) : ""}</div>${r.review ? `<div class="rev">check: ${esc(r.review)}</div>` : ""}</div><div class="price">${money(r.price)}${r.price_at_scan != null && r.price != null && Math.abs(r.price - r.price_at_scan) >= 0.01 ? `<div class="sub">${r.price > r.price_at_scan ? "▲" : "▼"} was ${money(r.price_at_scan)}</div>` : ""}</div></div>`;
+  qty = (qty || 1) * qtyOf(r);
+  const st = rowStatus(r), badge = qty > 1 ? `<span class="q"> ×${qty}</span>` : "", th = r.scryfall_id ? `<img class="th" src="${esc(imageUrl(r.scryfall_id))}" alt="" loading="lazy">` : "", sel = selectMode ? `<input type="checkbox" class="selbox" data-id="${r.id}" ${selected.has(r.id) ? "checked" : ""}>` : "";
+  if (r.unknown) return `<div class="card s-unknown" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div>${sel}<div class="n">Unknown card${r.desc ? " — " + esc(r.desc) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.foil ? " · foil" : ""} · tap to pick a match or ask AI</div>${r.review && !/not identified/.test(r.review) ? `<div class="rev">${esc(r.review)}</div>` : ""}</div><div class="price">—</div></div>`;
+  return `<div class="card s-${st}" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div>${sel}${th}<div class="n">${esc(r.name)}${badge}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}${r.variant ? " · " + esc(r.variant) : ""}${r.set_name ? " · " + esc(r.set_name) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.cond && r.cond !== "NM" ? " · " + esc(r.cond) : ""}${r.color ? " · " + esc(r.color) : ""}${r.type ? " · " + esc(r.type) : ""}${r.rarity ? " · " + esc(r.rarity) : ""}</div>${r.review ? `<div class="rev">check: ${esc(r.review)}</div>` : ""}</div><div class="price">${money(r.price)}${r.price_at_scan != null && r.price != null && Math.abs(r.price - r.price_at_scan) >= 0.01 ? `<div class="sub">${r.price > r.price_at_scan ? "▲" : "▼"} was ${money(r.price_at_scan)}</div>` : ""}</div></div>`;
 }
 let lastScanIds = [];
 function renderScan(rows) {
@@ -1274,8 +1353,8 @@ $("btnAiAll").onclick = async () => {
 };
 function rerenderScan() { renderScan(inventory.filter(r => lastScanIds.includes(r.id))); }
 function renderInvTotals() {
-  const total = inventory.reduce((s, r) => s + (r.price || 0), 0), adj = inventory.reduce((s, r) => s + (r.price || 0) * (COND[r.cond] || 1), 0), hits = inventory.filter(flagged).length;
-  $("invTot").textContent = inventory.length ? `${inventory.length} cards · $${total.toFixed(2)}${Math.abs(adj - total) >= 0.01 ? ` ($${adj.toFixed(2)} after condition)` : ""} · ${hits} at $${fmtThr()}+` : "empty";
+  const n = inventory.reduce((s, r) => s + qtyOf(r), 0), total = inventory.reduce((s, r) => s + (r.price || 0) * qtyOf(r), 0), adj = inventory.reduce((s, r) => s + (r.price || 0) * (COND[r.cond] || 1) * qtyOf(r), 0), hits = inventory.filter(flagged).reduce((s, r) => s + qtyOf(r), 0);
+  $("invTot").textContent = inventory.length ? `${n} cards · $${total.toFixed(2)}${Math.abs(adj - total) >= 0.01 ? ` ($${adj.toFixed(2)} after condition)` : ""} · ${hits} at $${fmtThr()}+` : "empty";
   if (!$("invList").classList.contains("hidden")) renderInvList();
 }
 const COLOR_ORDER = ["White", "Blue", "Black", "Red", "Green"];
@@ -1285,15 +1364,33 @@ function groupOrder(keys, by) { const rank = k => { if (by === "tier") return k.
   if (by === "color") { const i = COLOR_ORDER.indexOf(k); return i >= 0 ? i : k.startsWith("Multi") ? 5 : k === "Colorless" ? 6 : k === "Land" ? 7 : 8; }
   if (by === "rarity") return ["Mythic", "Rare", "Uncommon", "Common"].indexOf(k) + 1 || 9; if (by === "list") return k === "Unsorted" ? 1 : 0; if (by === "cond") return ["NM", "LP", "MP", "HP", "DMG"].indexOf(k); return 0; };
   return keys.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)); }
+let selectMode = false; const selected = new Set();
+const sorters = { price: (a, b) => (b.price || -1) - (a.price || -1), newest: (a, b) => (b.ts || "").localeCompare(a.ts || ""), name: (a, b) => (a.name || "").localeCompare(b.name || ""), set: (a, b) => (a.set || "").localeCompare(b.set || "") || (parseInt(a.number) || 0) - (parseInt(b.number) || 0) };
+$("sortBy").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
+$("btnSelect").onclick = () => { selectMode = !selectMode; selected.clear(); $("btnSelect").textContent = selectMode ? "Cancel" : "Select"; $("invList").classList.remove("hidden"); $("btnShowInv").textContent = "Hide"; renderInvList(); };
+function bulkBar() {
+  if (!selectMode) return "";
+  return `<div class="selbar"><span class="small">${selected.size} selected</span><button class="ghost" id="selAll" type="button" style="padding:6px 10px;font-size:13px">All shown</button><select id="selMove" style="width:auto;flex:1"><option value="">Move to list…</option>${allLists().map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join("")}<option value="${NEW_LIST}">＋ New list…</option></select><select id="selCond" style="width:auto"><option value="">Condition…</option>${Object.keys(COND).map(c => `<option value="${c}">${c}</option>`).join("")}</select><button class="danger" id="selDel" type="button" style="padding:6px 10px;font-size:13px">Delete</button></div>`;
+}
+$("invList").addEventListener("change", e => {
+  const cb = e.target.closest(".selbox"); if (cb) { if (cb.checked) selected.add(cb.dataset.id); else selected.delete(cb.dataset.id); const s = $("invList").querySelector(".selbar .small"); if (s) s.textContent = `${selected.size} selected`; return; }
+  if (e.target.id === "selMove") { const l = handleNewList(e.target, ""); if (!l || l === NEW_LIST) return; inventory.forEach(r => { if (selected.has(r.id)) r.list = l; }); saveInv(); refreshListSelects(); renderInvTotals(); setStatus(`Moved ${selected.size} to "${l}".`); selected.clear(); renderInvList(); }
+  if (e.target.id === "selCond") { const c = e.target.value; if (!c) return; inventory.forEach(r => { if (selected.has(r.id)) r.cond = c; }); saveInv(); renderInvTotals(); renderInvList(); }
+});
+$("invList").addEventListener("click", e => {
+  if (e.target.id === "selAll") { $("invList").querySelectorAll(".selbox").forEach(cb => { cb.checked = true; selected.add(cb.dataset.id); }); const s = $("invList").querySelector(".selbar .small"); if (s) s.textContent = `${selected.size} selected`; e.stopPropagation(); return; }
+  if (e.target.id === "selDel") { if (!selected.size || !confirm(`Delete ${selected.size} cards?`)) return; inventory.filter(r => selected.has(r.id)).forEach(r => cropStore.del(r.id)); inventory = inventory.filter(r => !selected.has(r.id)); selected.clear(); saveInv(); renderInvTotals(); renderInvList(); e.stopPropagation(); return; }
+  if (selectMode) { const cb = e.target.closest(".selbox"); if (cb) { e.stopPropagation(); return; } const c = e.target.closest(".card[data-id]"); if (c) { e.stopPropagation(); const box = c.querySelector(".selbox"); if (box) { box.checked = !box.checked; box.dispatchEvent(new Event("change", { bubbles: true })); } } }
+}, true);
 function renderInvList() {
-  const by = $("groupBy").value, q = $("search").value.trim().toLowerCase(), groups = new Map();
+  const by = $("groupBy").value, q = $("search").value.trim().toLowerCase(), groups = new Map(), sorter = sorters[$("sortBy").value] || sorters.price;
   inventory.filter(r => !q || `${r.name} ${r.set} ${r.set_name} ${r.list} ${r.variant} ${r.type} ${r.color}`.toLowerCase().includes(q)).forEach(r => { const k = groupKey(r, by); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
   const keys = groupOrder(Array.from(groups.keys()), by);
   const stack = $("stack").checked;
-  $("invList").innerHTML = keys.map(k => { const rows = groups.get(k).sort((a, b) => (b.price || -1) - (a.price || -1)); const total = rows.reduce((s, r) => s + (r.price || 0), 0);
+  $("invList").innerHTML = bulkBar() + keys.map(k => { const rows = groups.get(k).sort(sorter); const total = rows.reduce((s, r) => s + (r.price || 0) * qtyOf(r), 0), count = rows.reduce((s, r) => s + qtyOf(r), 0);
     let lines = rows.map(r => [r, 1]);
     if (stack) { const seen = new Map(); lines = []; rows.forEach(r => { const key = r.unknown ? r.id : [r.scryfall_id || r.name, r.foil ? "f" : "n", r.cond || "NM"].join("|"); if (seen.has(key)) seen.get(key)[1]++; else { const l = [r, 1]; seen.set(key, l); lines.push(l); } }); }
-    return `<div class="grp"><span>${esc(k)}</span><span class="mono">${rows.length} · $${total.toFixed(2)}</span></div>` + lines.map(([r, n]) => cardHtml(r, n)).join(""); }).join("") || `<div class="empty">${q ? "No matches." : "Nothing scanned yet."}</div>`;
+    return `<div class="grp"><span>${esc(k)}</span><span class="mono">${count} · $${total.toFixed(2)}</span></div>` + lines.map(([r, n]) => cardHtml(r, n)).join(""); }).join("") || `<div class="empty">${q ? "No matches." : "Nothing scanned yet."}</div>`;
 }
 $("groupBy").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
 $("stack").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
@@ -1301,31 +1398,37 @@ $("search").oninput = () => { $("invList").classList.remove("hidden"); $("btnSho
 $("btnSummary").onclick = () => { const s = $("summary"); s.classList.toggle("hidden"); if (!s.classList.contains("hidden")) renderSummary(); };
 function renderSummary() {
   const rows = inventory.filter(r => !r.unknown), unk = inventory.length - rows.length;
-  const total = rows.reduce((a, r) => a + (r.price || 0), 0), adj = rows.reduce((a, r) => a + (r.price || 0) * (COND[r.cond] || 1), 0);
-  const byList = new Map(); inventory.forEach(r => { const k = r.list || "Unsorted"; const v = byList.get(k) || { n: 0, v: 0 }; v.n++; v.v += r.price || 0; byList.set(k, v); });
+  const total = rows.reduce((a, r) => a + (r.price || 0) * qtyOf(r), 0), adj = rows.reduce((a, r) => a + (r.price || 0) * (COND[r.cond] || 1) * qtyOf(r), 0);
+  const byList = new Map(); inventory.forEach(r => { const k = r.list || "Unsorted"; const v = byList.get(k) || { n: 0, v: 0 }; v.n += qtyOf(r); v.v += (r.price || 0) * qtyOf(r); byList.set(k, v); });
+  // set completion: distinct printings owned vs printings in the set (English, from the database)
+  let completion = "";
+  if (db.loaded) { const totals = new Map(); db.cards.forEach(c => { if (c[5] === "en") totals.set(c[2], (totals.get(c[2]) || 0) + 1); });
+    const owned = new Map(); rows.forEach(r => { if (r.scryfall_id && r.set) { const s = r.set.toLowerCase(); if (!owned.has(s)) owned.set(s, new Set()); owned.get(s).add(r.scryfall_id); } });
+    completion = Array.from(owned.entries()).map(([s, ids]) => ({ s, n: ids.size, t: totals.get(s) || 0 })).sort((a, b) => b.n - a.n).slice(0, 12).map(x => `<div class="tot"><span>${esc(x.s.toUpperCase())} · ${esc(db.sets[x.s] || "")}</span><span class="mono">${x.n} / ${x.t}${x.t ? ` · ${Math.round(100 * x.n / x.t)}%` : ""}</span></div>`).join("");
+    if (completion) completion = `<div class="grp"><span>Set completion</span><span></span></div>` + completion; }
   const tiers = { hits: rows.filter(flagged), mid: rows.filter(r => !flagged(r) && r.price >= 0.25), bulk: rows.filter(r => r.price != null && r.price < 0.25) };
   const top = rows.slice().sort((a, b) => (b.price || 0) - (a.price || 0)).slice(0, 10);
   const foils = rows.filter(r => r.foil).length, sets = new Set(rows.map(r => r.set)).size;
   $("summary").innerHTML = `<div class="grp"><span>Totals</span><span class="mono">${inventory.length} cards</span></div>
     <div class="sub">Market value $${total.toFixed(2)}${Math.abs(adj - total) >= 0.01 ? ` · $${adj.toFixed(2)} after condition` : ""} · ${tiers.hits.length} at $${fmtThr()}+ ($${tiers.hits.reduce((a, r) => a + r.price, 0).toFixed(2)}) · ${tiers.mid.length} between 25¢ and $${fmtThr()} · ${tiers.bulk.length} bulk · ${foils} foil · ${sets} sets${unk ? ` · <span style="color:#ff7b7b">${unk} unknown</span>` : ""}</div>
     <div class="grp"><span>By list</span><span></span></div>` + Array.from(byList.entries()).sort((a, b) => b[1].v - a[1].v).map(([k, v]) => `<div class="tot"><span>${esc(k)}</span><span class="mono">${v.n} · $${v.v.toFixed(2)}</span></div>`).join("") +
-    `<div class="grp"><span>Top 10</span><span></span></div>` + top.map(cardHtml).join("");
+    completion + `<div class="grp"><span>Top 10</span><span></span></div>` + top.map(r => cardHtml(r)).join("");
 }
 $("btnShowInv").onclick = () => { const l = $("invList"); l.classList.toggle("hidden"); $("btnShowInv").textContent = l.classList.contains("hidden") ? "Show all" : "Hide"; if (!l.classList.contains("hidden")) renderInvList(); };
 $("btnClear").onclick = () => { if (confirm("Delete the whole inventory on this phone? Export first if you need it.")) { inventory = []; saveInv(); renderInvTotals(); renderInvList(); $("results").classList.add("hidden"); $("hits").classList.add("hidden"); } };
-document.addEventListener("click", e => { const c = e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); });
+document.addEventListener("click", e => { if (selectMode && e.target.closest("#invList")) return; const c = e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); });
 document.addEventListener("keydown", e => { if (e.key === "Enter") { const c = e.target.closest && e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); } });
 refreshListSelects(); renderInvTotals();
 
 /* ================= export ================= */
-const COLS = [["list", "List"], ["name", "Card"], ["set", "Set"], ["set_name", "Set name"], ["number", "#"], ["variant", "Variant"], ["rarity", "Rarity"], ["foil", "Foil"], ["cond", "Condition"], ["price", "TCG market ($)"], ["adj", "Adjusted ($)"], ["price_at_scan", "Price at scan ($)"], ["eur", "Cardmarket (€)"], ["flag", "Flag"], ["tier", "Price tier"], ["color", "Color"], ["type", "Type"], ["mv", "Mana value"], ["artist", "Artist"], ["released", "Released"], ["lang", "Lang"], ["review", "Review"], ["notes", "Notes"], ["note", "My note"], ["name_read", "Name as read"], ["via", "Identified by"], ["photo", "Source"], ["ts", "Scanned"], ["uri", "Scryfall"], ["image", "Image"], ["oracle_text", "Oracle text"]];
-function exportRows(rows) { return (rows || inventory).slice().sort((a, b) => (b.price || -1) - (a.price || -1)).map(withDetails).map(r => { const o = {}; COLS.forEach(([k, h]) => { o[h] = k === "flag" ? (flagged(r) ? "YES" : "") : k === "foil" ? (r.foil ? "yes" : "no") : k === "tier" ? tierOf(r) : k === "list" ? (r.list || "Unsorted") : k === "adj" ? (r.price == null ? "" : Math.round(r.price * (COND[r.cond] || 1) * 100) / 100) : (r[k] == null ? "" : r[k]); }); return o; }); }
+const COLS = [["list", "List"], ["qty", "Qty"], ["name", "Card"], ["set", "Set"], ["set_name", "Set name"], ["number", "#"], ["variant", "Variant"], ["rarity", "Rarity"], ["foil", "Foil"], ["cond", "Condition"], ["price", "TCG market ($)"], ["adj", "Adjusted ($)"], ["price_at_scan", "Price at scan ($)"], ["eur", "Cardmarket (€)"], ["flag", "Flag"], ["tier", "Price tier"], ["color", "Color"], ["type", "Type"], ["mv", "Mana value"], ["artist", "Artist"], ["released", "Released"], ["lang", "Lang"], ["review", "Review"], ["notes", "Notes"], ["note", "My note"], ["name_read", "Name as read"], ["via", "Identified by"], ["photo", "Source"], ["ts", "Scanned"], ["uri", "Scryfall"], ["image", "Image"], ["oracle_text", "Oracle text"]];
+function exportRows(rows) { return (rows || inventory).slice().sort((a, b) => (b.price || -1) - (a.price || -1)).map(withDetails).map(r => { const o = {}; COLS.forEach(([k, h]) => { o[h] = k === "flag" ? (flagged(r) ? "YES" : "") : k === "foil" ? (r.foil ? "yes" : "no") : k === "tier" ? tierOf(r) : k === "list" ? (r.list || "Unsorted") : k === "adj" ? (r.price == null ? "" : Math.round(r.price * (COND[r.cond] || 1) * 100) / 100) : k === "qty" ? qtyOf(r) : (r[k] == null ? "" : r[k]); }); return o; }); }
 function download(name, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
 const CONDS_LONG = { NM: "near_mint", LP: "lightly_played", MP: "moderately_played", HP: "heavily_played", DMG: "damaged" };
 const CONDS_DECKBOX = { NM: "Near Mint", LP: "Lightly Played", MP: "Played", HP: "Heavily Played", DMG: "Poor" };
 function stacked() {                        // identical printing + finish + condition + list -> one line with a quantity
   const m = new Map();
-  inventory.filter(r => !r.unknown).forEach(r => { const k = [r.scryfall_id || r.name, r.foil ? "f" : "n", r.cond || "NM", r.list || ""].join("|"); if (!m.has(k)) m.set(k, Object.assign({ qty: 0 }, r)); m.get(k).qty++; });
+  inventory.filter(r => !r.unknown).forEach(r => { const k = [r.scryfall_id || r.name, r.foil ? "f" : "n", r.cond || "NM", r.list || ""].join("|"); if (!m.has(k)) m.set(k, Object.assign({}, r, { qty: 0 })); m.get(k).qty += qtyOf(r); });
   return Array.from(m.values()).sort((a, b) => (b.price || -1) - (a.price || -1));
 }
 const csvOf = (hdr, lines) => [hdr, ...lines].map(l => l.map(v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -1347,6 +1450,38 @@ function exportBackup() {
   download(`cardscan-backup-${today()}.json`, new Blob([JSON.stringify(data)], { type: "application/json" }));
 }
 $("btnExport").onclick = () => { const f = $("exportFmt").value; if (f === "csv") exportCsv(); else if (f === "xlsx") exportXlsx(); else if (f === "backup") exportBackup(); else exportExternal(f); };
+function parseCsv(text) {                    // RFC-4180-ish: quotes, doubled quotes, CRLF
+  const rows = []; let row = [], v = "", q = false; text = text.replace(/^\ufeff/, "");
+  for (let i = 0; i < text.length; i++) { const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { v += '"'; i++; } else q = false; } else v += c; }
+    else if (c === '"') q = true; else if (c === ",") { row.push(v); v = ""; } else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(v); v = ""; if (row.length > 1 || row[0] !== "") rows.push(row); row = []; } else v += c; }
+  if (v !== "" || row.length) { row.push(v); rows.push(row); }
+  return rows;
+}
+$("importFile").onchange = async () => {
+  const file = $("importFile").files[0]; if (!file) return;
+  try {
+    const rows = parseCsv(await file.text()); if (rows.length < 2) throw new Error("no rows in that file");
+    const hdr = rows[0].map(h => h.trim().toLowerCase()); const col = (...names) => { for (const n of names) { const i = hdr.indexOf(n); if (i >= 0) return i; } return -1; };
+    const cName = col("name", "card name", "card"), cSet = col("set code", "set", "edition"), cNum = col("collector number", "card number", "number", "collector #"), cQty = col("quantity", "count", "qty"), cFoil = col("foil", "printing", "finish"), cCond = col("condition"), cId = col("scryfall id", "scryfall_id"), cLang = col("language");
+    if (cName < 0) throw new Error("no Name column");
+    const list = currentList(); let added = 0, unknownN = 0;
+    for (const r of rows.slice(1)) {
+      const name = (r[cName] || "").trim(); if (!name) continue;
+      const set = cSet >= 0 ? (r[cSet] || "").trim().toLowerCase() : "", num = cNum >= 0 ? normNumber(r[cNum]) : null, qty = Math.max(1, parseInt(cQty >= 0 ? r[cQty] : "1") || 1);
+      const foil = cFoil >= 0 ? /foil|holo/i.test(r[cFoil] || "") && !/non.?foil|normal/i.test(r[cFoil] || "") : false;
+      const condRaw = (cCond >= 0 ? r[cCond] || "" : "").toLowerCase(), cond = /near/.test(condRaw) ? "NM" : /light/.test(condRaw) ? "LP" : /moder|played$/.test(condRaw) ? "MP" : /heav/.test(condRaw) ? "HP" : /damag|poor/.test(condRaw) ? "DMG" : (["NM", "LP", "MP", "HP", "DMG"].includes(condRaw.toUpperCase()) ? condRaw.toUpperCase() : "NM");
+      let card = null;
+      if (cId >= 0 && r[cId]) card = await cardById(r[cId].trim());
+      if (!card) { const [c] = await resolve({ name, set_code: set || null, collector_number: num, language: cLang >= 0 ? r[cLang] : "en" }); card = c; }
+      const row = rowFromCard({ id: newId(), ts: now(), photo: "import:" + file.name, name_read: name, notes: "", review: card ? "" : "not found in the database", via: "import", cond, list, qty }, card, foil);
+      if (!card) { row.unknown = true; row.name = name; row.desc = ""; unknownN++; }
+      inventory.push(row); added += qty;
+    }
+    saveInv(); refreshListSelects(); renderInvTotals(); renderInvList(); setStatus(`Imported ${added} cards into "${list}"${unknownN ? ` (${unknownN} not matched — red rows)` : ""}.`);
+  } catch (e) { setStatus("Import failed: " + (e.message || e), true); }
+  $("importFile").value = "";
+};
 $("restoreFile").onchange = async () => {
   const file = $("restoreFile").files[0]; if (!file) return;
   try { const data = JSON.parse(await file.text()); if (data.app !== "cardscan" || !Array.isArray(data.inventory)) throw new Error("not a cardscan backup");
@@ -1389,19 +1524,31 @@ function openFix(id) {
   fixRow = inventory.find(r => r.id === id); if (!fixRow) return;
   if (live.on && !live.paused) { live.paused = true; live.pausedBySheet = true; }
   $("fixName").value = fixRow.unknown ? "" : (fixRow.name || fixRow.name_read || ""); $("fixFoil").checked = !!fixRow.foil; $("fixCond").value = fixRow.cond || "NM"; $("fixNote").value = fixRow.note || "";
-  fillListSelect($("fixList"), fixRow.list || "Unsorted"); $("fixNames").classList.add("hidden"); $("fixNames").innerHTML = "";
+  fillListSelect($("fixList"), fixRow.list || "Unsorted"); $("fixNames").classList.add("hidden"); $("fixNames").innerHTML = ""; $("fixNum").value = ""; $("fixNumNote").textContent = ""; $("fixQty").textContent = qtyOf(fixRow);
   renderDetails(); $("sheet").classList.add("open");
   if (fixRow.unknown) { $("fixPrints").innerHTML = `<div class="empty" style="padding:10px 0">Or type the name above to pick a printing by hand</div>`; renderCandidates(); }
   else loadPrints($("fixName").value);
 }
 async function renderCandidates() {
   const r = fixRow; $("fixUnknown").classList.remove("hidden"); $("fixAiNote").textContent = settings.apiKey ? "" : "needs an API key (Settings)";
-  const cands = (r.candidates || []).slice(0, 3);
-  if (!cands.length) { $("fixCands").innerHTML = `<div class="empty" style="padding:10px 0">No fingerprints loaded yet — ask AI, or type the name.</div>`; return; }
+  const cands = (r.candidates || []).slice(0, 3), guesses = (r.guesses || []).slice(0, 5);
   const cards = await Promise.all(cands.map(c => cardById(c.id)));
-  $("fixCands").innerHTML = cards.map((c, i) => c ? `<div class="cand" data-id="${c.id}"><img src="${esc(c.image)}" alt="" loading="lazy"><div><div>${esc(c.name)}</div><div class="sub mono">${esc(c.set.toUpperCase())} #${esc(c.collector_number)}${c.variant ? " · " + esc(c.variant) : ""} · match ${Math.max(0, Math.round(100 - cands[i].dist / 2.56))}%</div></div><div class="price">${c.prices.usd != null ? "$" + Number(c.prices.usd).toFixed(2) : "—"}</div></div>` : "").join("");
-  $("fixCands").onclick = async e => { const o = e.target.closest(".cand"); if (!o || !fixRow) return; const c = cards.find(x => x && x.id === o.dataset.id); if (!c) return; acceptCard(c, true); };
+  const gHtml = guesses.map(g => `<div class="opt" data-name="${esc(g.name)}"><span>${esc(g.name)}</span><span class="mono sub">name read ${Math.round(g.score * 100)}%</span></div>`).join("");
+  const cHtml = cards.map((c, i) => c ? `<div class="cand" data-id="${c.id}"><img src="${esc(c.image)}" alt="" loading="lazy"><div><div>${esc(c.name)}</div><div class="sub mono">${esc(c.set.toUpperCase())} #${esc(c.collector_number)}${c.variant ? " · " + esc(c.variant) : ""} · picture match ${Math.max(0, Math.round(100 - cands[i].dist / 2.56))}%</div></div><div class="price">${c.prices.usd != null ? "$" + Number(c.prices.usd).toFixed(2) : "—"}</div></div>` : "").join("");
+  $("fixCands").innerHTML = (gHtml ? `<div class="sub" style="padding:6px 0 2px">The name it read${r.title_read ? ` ("${esc(r.title_read)}")` : ""} looks like:</div>` + gHtml : "") + (cHtml ? `<div class="sub" style="padding:8px 0 2px">Closest pictures:</div>` + cHtml : "") + (!gHtml && !cHtml ? `<div class="empty" style="padding:10px 0">No guesses — type a few letters of the name above.</div>` : "");
+  $("fixCands").onclick = async e => {
+    const g = e.target.closest(".opt[data-name]"); if (g) { $("fixName").value = g.dataset.name; loadPrints(g.dataset.name); $("fixNum").focus(); return; }
+    const o = e.target.closest(".cand"); if (!o || !fixRow) return; const c = cards.find(x => x && x.id === o.dataset.id); if (!c) return; acceptCard(c, true); };
 }
+$("fixNum").oninput = () => {
+  const v = $("fixNum").value.trim().toUpperCase(); const box = $("fixPrints"); if (!v) { box.querySelectorAll(".opt").forEach(o => o.classList.remove("hidden")); $("fixNumNote").textContent = ""; return; }
+  const num = v.replace(/^0+/, ""); let shown = 0, only = null;
+  fixPrintsCache.forEach(c => { const el = box.querySelector(`.opt[data-id="${c.id}"]`); if (!el) return; const cn = String(c.collector_number).toUpperCase().replace(/^0+/, ""); const ok = cn === num || cn.startsWith(num) || c.set.toUpperCase() === v; el.classList.toggle("hidden", !ok); if (ok) { shown++; only = c; } });
+  $("fixNumNote").textContent = shown === 1 ? "that's it — tap it" : shown ? `${shown} match` : "no printing with that number";
+  if (shown === 1 && only && (String(only.collector_number).toUpperCase().replace(/^0+/, "") === num)) { if (fixRow && fixRow.unknown) acceptCard(only, true); else box.querySelector(`.opt[data-id="${only.id}"]`).click(); }
+};
+$("fixQtyMinus").onclick = () => { if (!fixRow) return; fixRow.qty = Math.max(1, qtyOf(fixRow) - 1); $("fixQty").textContent = qtyOf(fixRow); saveInv(); rerenderScan(); renderInvTotals(); };
+$("fixQtyPlus").onclick = () => { if (!fixRow) return; fixRow.qty = qtyOf(fixRow) + 1; $("fixQty").textContent = qtyOf(fixRow); saveInv(); rerenderScan(); renderInvTotals(); };
 function acceptCard(c, learnIt) {                 // user picked a printing for the current row
   const r = fixRow; delete r.unknown; delete r.candidates; delete r.desc; r.review = ""; r.via = r.via || "manual";
   rowFromCard(r, c, $("fixFoil").checked); if (learnIt && r.hash) learn(r.hash, c.id); if (settings.autoList && flagged(r) && r.list === (r.list0 || r.list)) r.list = settings.autoList;
@@ -1440,13 +1587,13 @@ $("fixList").onchange = () => handleNewList($("fixList"), fixRow ? fixRow.list :
 $("fixDone").onclick = async () => { const row = fixRow; closeFix(); if (!row) return; row.foil = $("fixFoil").checked; row.cond = $("fixCond").value; row.note = $("fixNote").value.trim();
   const l = $("fixList").value; if (l && l !== NEW_LIST) row.list = l; if (row.scryfall_id && !row.unknown) { const c = await cardById(row.scryfall_id); if (c) rowFromCard(row, c, row.foil); } saveInv(); refreshListSelects(); rerenderScan(); renderInvTotals(); };
 $("fixDelete").onclick = () => { if (fixRow && confirm(`Delete "${fixRow.name}"?`)) { cropStore.del(fixRow.id); inventory = inventory.filter(r => r !== fixRow); saveInv(); rerenderScan(); renderInvTotals(); } closeFix(); };
-$("fixName").oninput = () => { clearTimeout(fixTimer); const q = $("fixName").value.trim(); if (q.length < 3) return; fixTimer = setTimeout(async () => { const names = await nameSuggestions(q); $("fixNames").innerHTML = names.slice(0, 12).map(n => `<div class="opt" data-name="${esc(n)}">${esc(n)}</div>`).join(""); $("fixNames").classList.toggle("hidden", !names.length); }, 250); };
+$("fixName").oninput = () => { clearTimeout(fixTimer); const q = $("fixName").value.trim(); if (q.length < 2) return; fixTimer = setTimeout(async () => { const names = await nameSuggestions(q); $("fixNames").innerHTML = names.slice(0, 12).map(n => `<div class="opt" data-name="${esc(n)}">${esc(n)}</div>`).join(""); $("fixNames").classList.toggle("hidden", !names.length); }, 250); };
 $("fixNames").addEventListener("click", e => { const o = e.target.closest(".opt"); if (!o) return; $("fixName").value = o.dataset.name; $("fixNames").classList.add("hidden"); loadPrints(o.dataset.name); });
 async function loadPrints(name) {
   const box = $("fixPrints"); box.innerHTML = `<div class="empty" style="padding:10px 0">Loading printings…</div>`;
   const prints = await printsOf(name); fixPrintsCache = prints;
   if (!prints.length) { box.innerHTML = `<div class="empty" style="padding:10px 0">No printings found for that name.</div>`; return; }
-  box.innerHTML = prints.map(c => `<div class="opt${fixRow && c.id === fixRow.scryfall_id ? " sel" : ""}" data-id="${c.id}"><span>${esc(c.set.toUpperCase())} #${esc(c.collector_number)} · ${esc(c.set_name)}${c.variant ? " · " + esc(c.variant) : ""}</span><span class="mono">${c.prices.usd != null ? "$" + Number(c.prices.usd).toFixed(2) : "—"}${c.prices.usd_foil != null ? " / ✶$" + Number(c.prices.usd_foil).toFixed(2) : ""}</span></div>`).join("");
+  box.innerHTML = prints.map(c => `<div class="opt${fixRow && c.id === fixRow.scryfall_id ? " sel" : ""}" data-id="${c.id}"><span><img src="${esc(c.image)}" alt="" loading="lazy" style="width:28px;height:39px;object-fit:cover;border-radius:3px;vertical-align:middle;margin-right:6px;background:#0f1216">${esc(c.set.toUpperCase())} <b>#${esc(c.collector_number)}</b> · ${esc(c.set_name)}${c.released_at ? " · " + esc(String(c.released_at).slice(0, 4)) : ""}${c.variant ? " · " + esc(c.variant) : ""}</span><span class="mono">${c.prices.usd != null ? "$" + Number(c.prices.usd).toFixed(2) : "—"}${c.prices.usd_foil != null ? " / ✶$" + Number(c.prices.usd_foil).toFixed(2) : ""}</span></div>`).join("");
   box.onclick = e => { const o = e.target.closest(".opt"); if (!o || !fixRow) return; const c = fixPrintsCache.find(p => p.id === o.dataset.id); if (!c) return;
     if (fixRow.unknown) { acceptCard(c, true); return; }
     fixRow.review = ""; rowFromCard(fixRow, c, $("fixFoil").checked); if (fixRow.hash) learn(fixRow.hash, c.id); cropStore.del(fixRow.id); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); box.querySelectorAll(".opt").forEach(x => x.classList.toggle("sel", x === o)); };
