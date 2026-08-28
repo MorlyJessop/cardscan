@@ -734,16 +734,41 @@ async function identifyCrop(cropCanvas, opts) {
 
 /* ================= image helpers, OpenCV ================= */
 let cvReady = null;
+const CV_SOURCES = ["opencv.js", "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@5.0.0-release.1/dist/opencv.js", "https://docs.opencv.org/4.x/opencv.js"];
+function cvProgress(msg) { if (live.on || !$("live").classList.contains("hidden")) setHint(msg); else setStatus(msg); }
+async function fetchScript(url, label) {           // download with a progress readout, then run it from a blob
+  const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`);
+  const total = +(r.headers.get("content-length") || 0); const chunks = []; let got = 0;
+  if (r.body && r.body.getReader) { const rd = r.body.getReader(); for (;;) { const { done, value } = await rd.read(); if (done) break; chunks.push(value); got += value.length;
+      cvProgress(`Loading vision library (${label})… ${total ? Math.round(100 * got / total) + "%" : (got / 1e6).toFixed(1) + " MB"}`); } }
+  else chunks.push(new Uint8Array(await r.arrayBuffer()));
+  const blobUrl = URL.createObjectURL(new Blob(chunks, { type: "text/javascript" }));
+  await new Promise((res, rej) => { const s = document.createElement("script"); s.src = blobUrl; s.onload = res; s.onerror = () => rej(new Error("script failed to run")); document.head.appendChild(s); });
+}
+function tagScript(url) { return new Promise((res, rej) => { const s = document.createElement("script"); s.src = url; s.async = true; s.onload = res; s.onerror = () => rej(new Error("script failed to load")); document.head.appendChild(s); }); }
+async function settleCv() {                          // window.cv may be the module, a promise of it, or not yet initialised
+  const c = window.cv; if (!c) throw new Error("vision library did not define cv");
+  if (c.Mat) return c;
+  if (typeof c.then === "function") return await c;
+  return await new Promise(res => { c.onRuntimeInitialized = () => res(window.cv); });
+}
 function loadCv() {
   if (cvReady) return cvReady;
-  cvReady = new Promise((resolve, reject) => {
-    const urls = ["https://docs.opencv.org/4.x/opencv.js", "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js"];
-    const tryLoad = i => { if (i >= urls.length) return reject(new Error("could not load the vision library. Check the connection and retry."));
-      const s = document.createElement("script"); s.src = urls[i]; s.async = true; s.onerror = () => tryLoad(i + 1);
-      s.onload = () => { const c = window.cv; if (c && c.Mat) return resolve(c); if (c && typeof c.then === "function") return c.then(resolve, () => tryLoad(i + 1)); if (c) c.onRuntimeInitialized = () => resolve(window.cv); else tryLoad(i + 1); };
-      document.head.appendChild(s); };
-    tryLoad(0);
-  });
+  cvReady = (async () => {
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("timed out")), 150000));
+    let lastErr = null;
+    for (let i = 0; i < CV_SOURCES.length; i++) {
+      const url = CV_SOURCES[i], label = i === 0 ? "from your site" : i === 1 ? "from jsDelivr" : "from opencv.org";
+      try {
+        cvProgress(`Loading vision library (${label})…`);
+        if (i < 2) await Promise.race([fetchScript(url, label), timeout]); else await Promise.race([tagScript(url), timeout]);
+        cvProgress("Starting vision library…");
+        return await Promise.race([settleCv(), timeout]);
+      } catch (e) { lastErr = e; console.warn("cv source failed", url, e); }
+    }
+    cvReady = null;
+    throw new Error(`the vision library could not be loaded (${lastErr && lastErr.message}). Upload opencv.js next to index.html in your GitHub repo and reload.`);
+  })();
   return cvReady;
 }
 async function fileToCanvas(file, maxSide) {
@@ -801,7 +826,6 @@ goBtn.onclick = async () => {
   const foilBatch = $("foil").checked, files = Array.from(filesEl.files), scanRows = [], scanList = currentList();
   settings.lastList = scanList; saveSettings();
   try {
-    setStatus("Loading vision library (first time only, ~10 MB)…");
     const cv = await loadCv(); const det = makeDetector(cv);
     for (let fi = 0; fi < files.length; fi++) {
       const file = files[fi], tag = files.length > 1 ? ` (photo ${fi + 1}/${files.length})` : "", photo = file.name || `photo ${fi + 1}`;
@@ -850,7 +874,6 @@ async function startLive() {
   live.items = []; live.tracks = []; live.recent = []; live.retry = null; live.paused = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden");
   $("live").classList.remove("hidden"); setHint("Starting camera…");
   try {
-    setHint("Loading vision library…");
     live.cv = await loadCv(); live.det = makeDetector(live.cv); live.tracker = new live.det.LiveTracker({ lockFrames: 4, clearFrames: 5, iou: 0.8 });
     live.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 2160 } } });
     video.srcObject = live.stream; await video.play();
