@@ -2,16 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#14171c">
 <title>cardscan</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='14' y='6' width='36' height='52' rx='4' fill='%23e0b64a'/%3E%3Crect x='19' y='11' width='26' height='22' rx='2' fill='%2314171c'/%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2314171c'/%3E%3Crect x='14' y='6' width='36' height='52' rx='4' fill='%23e0b64a'/%3E%3Crect x='19' y='11' width='26' height='22' rx='2' fill='%2314171c'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 :root{--bg:#14171c;--panel:#1d2229;--line:#2c333d;--ink:#e8e6df;--mute:#9aa3ad;--gold:#e0b64a;--ok:#6fbf8a;--warn:#e0805a;--bad:#d9534f}
-*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
+html,body{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body{-webkit-user-select:none;user-select:none}input,textarea,select,.oracle,.kv{-webkit-user-select:text;user-select:text}
+img{-webkit-touch-callout:none}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding-bottom:env(safe-area-inset-bottom)}
 main{max-width:640px;margin:0 auto;padding:18px 14px 60px}
 h1{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin:0 0 14px;display:flex;justify-content:space-between;align-items:center}
@@ -77,6 +81,11 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 .liveBottom .row{margin-top:8px}
 .liveBottom button{padding:10px 12px;font-size:15px}
 .liveBottom button.ghost{color:#fff;border-color:rgba(255,255,255,.35)}
+.shutter{position:absolute;right:18px;bottom:calc(150px + env(safe-area-inset-bottom));width:84px;height:84px;border-radius:50%;background:#fff;border:6px solid rgba(255,255,255,.35);background-clip:padding-box;box-shadow:0 4px 18px rgba(0,0,0,.6);font-size:30px;padding:0;z-index:3;touch-action:none}
+.shutter:active{transform:scale(.94)}
+.live.lefty .shutter{right:auto;left:18px}
+#liveLast{padding-right:96px}.live.lefty #liveLast{padding-right:0;padding-left:96px}
+.liveBottom .row{padding-right:96px}.live.lefty .liveBottom .row{padding-right:0;padding-left:96px}
 .li{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:6px 0;color:#fff;border-top:1px solid rgba(255,255,255,.12);cursor:pointer}
 .li:first-child{border-top:0}.li img{width:44px;height:61px;object-fit:cover;border-radius:4px;background:#222}
 .li .n{font-weight:600;font-size:15px}.li .sub{color:#c8ccd2}.li .price{color:var(--gold)}
@@ -112,6 +121,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="row" id="sortRules"><div class="field" style="flex:1;margin:0"><label for="foilList">Foils go to</label><select id="foilList"><option value="">— the scan list —</option></select></div>
     <div class="field" style="flex:1;margin:0"><label for="bulkList">Everything else goes to</label><select id="bulkList"><option value="">— the scan list —</option></select></div></div>
   <div class="field"><label for="foilGuess">Foil guessing (from the shimmer while you hover; trained in the camera walk-through)</label><select id="foilGuess"><option value="on">On — sets foil when confident, asks when not</option><option value="off">Off — use the foil checkbox</option></select></div>
+  <div class="field"><label for="hand">Big Snap button on the</label><select id="hand"><option value="right">right (right-handed)</option><option value="left">left (left-handed)</option></select></div>
   <div class="field"><label for="voiceCmd">Voice commands while scanning ("undo", "foil", "not foil", "snap", "pause", "resume", "look up")</label><select id="voiceCmd"><option value="off">Off</option><option value="on">On (uses the microphone)</option></select></div>
   <div class="field"><label for="playset">Extras report: copies beyond this many are extras</label><input type="number" id="playset" value="4" min="1" step="1"></div>
   <div class="field"><label for="ocrMode">Read card text on the phone (free, offline) when fingerprints don't match</label><select id="ocrMode"><option value="on">On — name, then type line, then bottom line</option><option value="off">Off</option></select></div>
@@ -197,10 +207,10 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <div class="row"><button id="tuneTrain" type="button">Train camera (1 min)</button><button class="ghost" id="tuneAuto" type="button">Auto-tune focus</button><button class="ghost" id="tuneReset" type="button">Back to auto</button><button class="ghost" id="tuneClose" type="button">Close</button></div>
   </div>
   <div class="pick hidden" id="pick"><div class="tot" style="margin-bottom:8px"><b>This session</b><button class="ghost" id="pickClose" type="button" style="padding:6px 10px;font-size:13px">Close</button></div><div id="pickList"></div></div>
+  <button id="liveSnap" class="shutter" type="button" aria-label="Snap">📸</button>
   <div class="liveBottom">
     <div id="liveLast"></div>
     <div class="row">
-      <button id="liveSnap" type="button" style="padding:10px 14px">📸 Snap</button>
       <button class="ghost" id="liveUndo" type="button">Undo</button>
       <button class="ghost" id="liveCards" type="button">Cards (0)</button>
       <button class="ghost" id="livePause" type="button">Pause</button>
@@ -220,7 +230,9 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <div id="fixUnknown" class="hidden">
       <h3>Closest fingerprint matches — tap the right one</h3>
       <div id="fixCands" class="list" style="max-height:40vh"></div>
-      <div class="row"><button id="fixAi" type="button">Identify with AI (about 1¢)</button><span class="small" id="fixAiNote"></span></div>
+      <div class="row"><button id="fixAskApp" type="button">Ask the Claude app (your subscription)</button><button class="ghost" id="fixAi" type="button">API (about 1¢)</button><span class="small" id="fixAiNote"></span></div>
+      <div class="row"><input type="text" id="fixAnswer" placeholder="Paste Claude's one-line answer here" style="flex:1"><button class="ghost" id="fixAnswerPaste" type="button">Paste</button></div>
+      <div class="small">Share sends the photo and the question to the Claude app; it answers with a line like <span class="mono">Nethergoyf | MH3 | 103 | nonfoil</span> — copy it, come back, tap Paste.</div>
     </div>
     <div class="row hidden" id="fixAiExactRow"><button class="ghost" id="fixAiExact" type="button">Read exact printing with AI (about 1¢)</button></div>
     <div class="field"><label for="fixName">Name</label><input type="text" id="fixName" autocomplete="off" placeholder="type a few letters…"></div>
@@ -487,7 +499,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 "use strict";
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "cardscan_settings", INV_KEY = "cardscan_inventory", LEARNED_KEY = "cardscan_learned";
-const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on", sortAssist: "off", foilList: "", bulkList: "", voiceCmd: "off", playset: 4, gClientId: "", driveAuto: true, photoMin: 5, drive: {}, foil: {} },
+const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on", sortAssist: "off", foilList: "", bulkList: "", voiceCmd: "off", playset: 4, gClientId: "", driveAuto: true, photoMin: 5, drive: {}, foil: {}, hand: "right" },
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
 let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
 inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
@@ -517,14 +529,14 @@ const imageUrl = id => id ? `https://cards.scryfall.io/normal/front/${id[0]}/${i
 /* ================= settings, lists ================= */
 $("apiKey").value = settings.apiKey; $("model").value = settings.model; $("threshold").value = settings.threshold; $("voice").value = settings.voice;
 $("aiMode").value = settings.aiMode; $("strict").value = settings.strict; $("repeats").value = settings.repeats; $("ocrMode").value = settings.ocrMode;
-$("sortAssist").value = settings.sortAssist; $("voiceCmd").value = settings.voiceCmd; $("foilGuess").value = settings.foil.off ? "off" : "on"; $("playset").value = settings.playset; $("gClientId").value = settings.gClientId || ""; $("driveAuto").checked = settings.driveAuto !== false; $("photoMin").value = settings.photoMin;
+$("sortAssist").value = settings.sortAssist; $("voiceCmd").value = settings.voiceCmd; $("hand").value = settings.hand || "right"; $("live").classList.toggle("lefty", settings.hand === "left"); $("foilGuess").value = settings.foil.off ? "off" : "on"; $("playset").value = settings.playset; $("gClientId").value = settings.gClientId || ""; $("driveAuto").checked = settings.driveAuto !== false; $("photoMin").value = settings.photoMin;
 $("thrLabel").textContent = fmtThr();
 $("btnSettings").onclick = () => $("settings").classList.toggle("hidden");
 $("saveSettings").onclick = () => {
   settings.apiKey = $("apiKey").value.trim(); settings.model = $("model").value.trim() || "claude-sonnet-5";
   settings.threshold = parseFloat($("threshold").value) || 0; settings.autoList = $("autoList").value === NEW_LIST ? "" : $("autoList").value;
   settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; settings.ocrMode = $("ocrMode").value;
-  settings.foil.off = $("foilGuess").value === "off"; settings.sortAssist = $("sortAssist").value; settings.foilList = $("foilList").value === NEW_LIST ? "" : $("foilList").value; settings.bulkList = $("bulkList").value === NEW_LIST ? "" : $("bulkList").value; settings.voiceCmd = $("voiceCmd").value;
+  settings.hand = $("hand").value; $("live").classList.toggle("lefty", settings.hand === "left"); settings.foil.off = $("foilGuess").value === "off"; settings.sortAssist = $("sortAssist").value; settings.foilList = $("foilList").value === NEW_LIST ? "" : $("foilList").value; settings.bulkList = $("bulkList").value === NEW_LIST ? "" : $("bulkList").value; settings.voiceCmd = $("voiceCmd").value;
   settings.playset = Math.max(1, parseInt($("playset").value) || 4); settings.gClientId = $("gClientId").value.trim(); settings.driveAuto = $("driveAuto").checked; settings.photoMin = Math.max(0, parseFloat($("photoMin").value) || 0); saveSettings();
   $("thrLabel").textContent = fmtThr(); $("settingsStatus").textContent = "Saved"; renderInvTotals();
   setTimeout(() => $("settingsStatus").textContent = "", 1500);
@@ -1161,6 +1173,19 @@ function stopLive() {
     setStatus(`${rows.length} cards scanned → "${live.listName}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unk ? `. ${unk} unknown — red rows below.` : "."}${unread ? ` ${unread} not read.` : ""}`); }
 }
 $("liveDone").onclick = stopLive;
+/* app-like: no page zoom. Two fingers on the camera view zoom the camera instead (where the phone allows it). */
+document.addEventListener("gesturestart", e => e.preventDefault(), { passive: false });
+document.addEventListener("gesturechange", e => e.preventDefault(), { passive: false });
+const pinch = { d0: 0, z0: 1, last: 0 };
+const liveEl = $("live");
+liveEl.addEventListener("touchstart", e => { if (e.touches.length === 2) { e.preventDefault(); pinch.d0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); pinch.z0 = settings.camera.zoom || 1; } }, { passive: false });
+liveEl.addEventListener("touchmove", e => {
+  if (e.touches.length !== 2) return; e.preventDefault(); const cap = live.caps && live.caps.zoom; if (!cap || !live.track || !pinch.d0) return;
+  const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); const z = Math.min(cap.max, Math.max(cap.min, pinch.z0 * d / pinch.d0));
+  if (Date.now() - pinch.last < 80) return; pinch.last = Date.now(); settings.camera.zoom = Math.round(z * 100) / 100; live.track.applyConstraints({ advanced: [{ zoom: settings.camera.zoom }] }).catch(() => {}); setHint(`Zoom ${settings.camera.zoom.toFixed(1)}×`);
+}, { passive: false });
+liveEl.addEventListener("touchend", e => { if (pinch.d0 && e.touches.length < 2) { pinch.d0 = 0; saveSettings(); } });
+document.addEventListener("touchmove", e => { if (e.touches.length > 1 && !liveEl.contains(e.target)) e.preventDefault(); }, { passive: false });
 /* keep the screen on while the camera is open */
 let wakeLock = null;
 async function keepAwake(on) { try { if (on && "wakeLock" in navigator) { wakeLock = await navigator.wakeLock.request("screen"); } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (e) {} }
@@ -1850,6 +1875,46 @@ function acceptCard(c, learnIt) {                 // user picked a printing for 
   rowFromCard(r, c, $("fixFoil").checked); if (learnIt && r.hash) learn(r.hash, c.id); if (settings.autoList && flagged(r) && r.list === (r.list0 || r.list)) r.list = settings.autoList;
   cropStore.del(r.id); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); $("fixUnknown").classList.add("hidden"); $("fixName").value = r.name; loadPrints(r.name);
 }
+const ASK_TEXT = "Identify this Magic: The Gathering card from the photo. Reply with exactly one line and nothing else, in this format:\nName | SET code | collector number | foil or nonfoil\nExample: Nethergoyf | MH3 | 103 | nonfoil\nUse the 3-5 letter set code printed bottom-left. If you cannot read the set or number, write ? for that part.";
+async function askClaudeApp(row) {
+  const dataUrl = await cropStore.get(row.id); if (!dataUrl) throw new Error("no saved picture of this card");
+  const bin = atob(dataUrl.split(",")[1]); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const file = new File([bytes], "card.jpg", { type: "image/jpeg" });
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: "Identify this card", text: ASK_TEXT }); return "shared"; }
+  try { await navigator.clipboard.writeText(ASK_TEXT); } catch (e) {}
+  download("card.jpg", file); return "downloaded";
+}
+function parseAnswer(text) {                     // "Name | SET | 123 | foil"  (also tolerates commas, "(SET)", "#123")
+  const lines = (text || "").trim().split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 2 && !/:$/.test(s));
+  let t = lines.find(s => s.includes("|")) || lines.find(s => /[\(\[][A-Za-z0-9]{2,5}[\)\]]/.test(s)) || lines[lines.length - 1] || ""; if (!t) return null;
+  let parts = t.split("|").map(s => s.trim());
+  if (parts.length < 2) { const m = t.match(/^(.*?)\s*[\(\[]([A-Za-z0-9]{2,5})[\)\]]\s*#?\s*([0-9A-Za-z★]*)/); if (m) parts = [m[1], m[2], m[3]]; else parts = t.split(",").map(s => s.trim()); }
+  const name = parts[0].replace(/^name:\s*/i, "").trim(); if (!name) return null;
+  const set = (parts[1] || "").replace(/[^A-Za-z0-9]/g, ""); const num = (parts[2] || "").replace(/[^0-9A-Za-z★]/g, "");
+  const foil = /\bfoil\b/i.test(parts.slice(3).join(" ")) && !/non.?foil/i.test(parts.slice(3).join(" "));
+  return { name, set_code: set && set !== "?" ? set : null, collector_number: num && num !== "?" ? num : null, foil, language: "en", confidence: "high", notes: "" };
+}
+async function applyAnswer(row, text) {
+  const rd = parseAnswer(text); if (!rd) throw new Error("couldn't read that line — expected Name | SET | number | foil");
+  const [card, reason] = await resolve(rd); if (!card) throw new Error(`"${rd.name}" is not in the database — check the spelling`);
+  const wasUnknown = !!row.unknown; delete row.unknown; delete row.candidates; delete row.desc; delete row.guesses;
+  rowFromCard(row, card, rd.foil || (!wasUnknown && row.foil)); row.name_read = rd.name; row.via = "claude-app"; row.review = reason || "";
+  if (wasUnknown || row.list === row.list0) row.list = pileFor(row, row.list0 || row.list);
+  if (rd.set_code && rd.collector_number && !reason && row.hash) learn(row.hash, card.id);
+  if (!row.review) cropStore.del(row.id); return row;
+}
+$("fixAskApp").onclick = async () => {
+  const r = fixRow; if (!r) return;
+  try { const how = await askClaudeApp(r); $("fixAiNote").textContent = how === "shared" ? "Sent. Copy Claude's line, come back, tap Paste." : "Photo downloaded and the question copied — paste both into Claude, then paste the answer here."; }
+  catch (e) { if (!/abort/i.test(e && e.name || "")) $("fixAiNote").textContent = e.message || String(e); }
+};
+$("fixAnswerPaste").onclick = async () => {
+  let text = $("fixAnswer").value; if (!text.trim()) { try { text = await navigator.clipboard.readText(); $("fixAnswer").value = text; } catch (e) { $("fixAiNote").textContent = "Paste the line into the box first."; return; } }
+  const r = fixRow; if (!r) return;
+  try { await applyAnswer(r, text); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); $("fixUnknown").classList.add("hidden"); $("fixName").value = r.name; loadPrints(r.name); $("fixAiNote").textContent = ""; $("fixAnswer").value = ""; }
+  catch (e) { $("fixAiNote").textContent = e.message || String(e); }
+};
+$("fixAnswer").addEventListener("keydown", e => { if (e.key === "Enter") $("fixAnswerPaste").click(); });
 $("fixAi").onclick = async () => {
   const r = fixRow; if (!r) return; if (!settings.apiKey) { $("fixAiNote").textContent = "Add an API key in Settings first."; return; }
   $("fixAi").disabled = true; $("fixAiNote").textContent = "AI reading…";
@@ -1873,7 +1938,7 @@ async function renderDetails() {
   $("fixImg").src = r.image || imageUrl(r.scryfall_id) || ""; $("fixImg").alt = r.name || "";
   const kv = [["Set", `${r.set} #${r.number}${r.set_name ? " · " + r.set_name : ""}`], ["Rarity / finish", `${r.rarity || "?"}${r.foil ? " · foil" : ""}${r.variant ? " · " + r.variant : ""}`],
     ["Price", `${money(r.price)} TCGplayer market${r.eur != null ? ` · €${Number(r.eur).toFixed(2)} Cardmarket` : ""}${r.price_at_scan != null && r.price != null && r.price !== r.price_at_scan ? ` · was ${money(r.price_at_scan)} at scan` : ""}`],
-    ["Foil guess", r.sheen != null && settings.foil && settings.foil.thr ? `shimmer ${Math.round(r.sheen)} (threshold ${Math.round(settings.foil.thr)})` : ""], ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? `by fingerprint (offline${r.dist != null ? `, match ${Math.max(0, Math.round(100 - r.dist / 2.56))}%` : ""})` : r.via === "ocr" ? `by reading the card text on the phone${r.name_read ? ` ("${r.name_read}")` : ""}` : r.via === "claude" ? "by Claude vision" : r.via === "manual" ? "by you" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
+    ["Foil guess", r.sheen != null && settings.foil && settings.foil.thr ? `shimmer ${Math.round(r.sheen)} (threshold ${Math.round(settings.foil.thr)})` : ""], ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "claude-app" ? "by the Claude app (your subscription)" : r.via === "fingerprint" ? `by fingerprint (offline${r.dist != null ? `, match ${Math.max(0, Math.round(100 - r.dist / 2.56))}%` : ""})` : r.via === "ocr" ? `by reading the card text on the phone${r.name_read ? ` ("${r.name_read}")` : ""}` : r.via === "claude" ? "by Claude vision" : r.via === "manual" ? "by you" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
   $("fixKv").innerHTML = kv.filter(([, v]) => v).map(([k, v]) => `<div><b>${esc(k)}:</b> ${k === "Scryfall" ? v : esc(v)}</div>`).join("");
   $("fixOracle").textContent = r.oracle_text || "";
 }
