@@ -33,7 +33,10 @@ input[type=text],input[type=password],input[type=number],input[type=search],sele
 input[type=range]{width:100%}
 .field{margin-top:10px}.field label{display:block;color:var(--mute);font-size:13px;margin-bottom:4px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.card{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+.card{display:grid;grid-template-columns:6px 1fr auto;gap:10px;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+.card .dot{width:6px;border-radius:3px;background:var(--line)}
+.card.s-ok .dot{background:var(--ok)}.card.s-hit .dot{background:var(--gold)}.card.s-unpriced .dot,.card.s-check .dot{background:#f59e0b}.card.s-unknown .dot{background:var(--bad)}
+.card.s-unknown .n{color:#ff7b7b}
 .card:first-child{border-top:0}.card .n{font-weight:600}.sub{color:var(--mute);font-size:13px}
 .price{font-variant-numeric:tabular-nums;text-align:right;font-weight:600;white-space:nowrap}
 .hits .price{color:var(--gold);font-size:18px}
@@ -47,7 +50,7 @@ a{color:var(--ink)}
 .grp{display:flex;justify-content:space-between;gap:8px;margin:14px 0 4px;color:var(--mute);font-size:12px;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px}
 .grp:first-child{margin-top:0}.grp .mono{letter-spacing:0;text-transform:none}
 @media (prefers-reduced-motion:no-preference){.busy{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.4}}}
-.sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;z-index:9}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;z-index:30}
 .sheet.open{display:flex}
 .sheet .box{background:var(--panel);width:100%;max-width:640px;margin:0 auto;border-radius:16px 16px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
 .opt{padding:10px 0;border-top:1px solid var(--line);cursor:pointer;display:flex;justify-content:space-between;gap:8px}
@@ -77,7 +80,10 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 .li{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:6px 0;color:#fff;border-top:1px solid rgba(255,255,255,.12);cursor:pointer}
 .li:first-child{border-top:0}.li img{width:44px;height:61px;object-fit:cover;border-radius:4px;background:#222}
 .li .n{font-weight:600;font-size:15px}.li .sub{color:#c8ccd2}.li .price{color:var(--gold)}
-.li.reading{opacity:.75}.li.error .n{color:var(--warn)}.li.unread .n{color:#ff7b7b}
+.li.reading{opacity:.75}.li.error .n{color:var(--warn)}.li.unread .n,.li.unknown .n{color:#ff7b7b}.li.seen{opacity:.6}
+.cand{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);cursor:pointer}
+.cand:first-child{border-top:0}.cand img{width:44px;height:61px;object-fit:cover;border-radius:4px;background:#0f1216}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-top:8px}.legend i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px;vertical-align:middle}
 .tune{position:absolute;left:8px;right:8px;top:calc(56px + env(safe-area-inset-top));background:rgba(20,23,28,.94);border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--ink);max-height:60vh;overflow:auto}
 .tune .field{margin-top:8px}.meter{height:8px;background:#2c333d;border-radius:4px;overflow:hidden;margin-top:4px}.meter i{display:block;height:100%;background:var(--ok);width:0}
 </style>
@@ -93,9 +99,13 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="field"><label for="threshold">Flag cards at or above ($)</label><input type="number" id="threshold" value="1" step="0.25" min="0"></div>
   <div class="field"><label for="autoList">Cards at or above that go to this list instead (optional)</label><select id="autoList"><option value="">— keep with the scan —</option></select></div>
   <div class="field"><label for="voice">Voice feedback while scanning</label><select id="voice"><option value="hits">Hits and problems</option><option value="all">Every card</option><option value="off">Off (beeps only)</option></select></div>
+  <div class="field"><label for="aiMode">AI (Claude) use</label><select id="aiMode"><option value="manual">Only when I tap a card and ask (default)</option><option value="auto">Automatically for cards the fingerprints don't know</option></select></div>
+  <div class="field"><label for="strict">Fingerprint matching</label><select id="strict"><option value="normal">Normal</option><option value="strict">Strict (fewer wrong matches)</option><option value="loose">Loose (more matches, more mistakes)</option></select></div>
+  <div class="field"><label for="repeats">Sweep mode: a card seen again</label><select id="repeats"><option value="skip">Highlight it, don't add again</option><option value="count">Add it as another copy</option></select></div>
   <div class="row"><button id="saveSettings" type="button">Save</button><span class="status" id="settingsStatus"></span></div>
   <h3>Offline database</h3>
   <div class="dbstat"><span id="dbStat">Not loaded</span><span id="hashStat"></span></div>
+  <div class="small" id="coverage" style="margin-top:6px"></div>
   <div class="row"><button class="ghost" id="btnDb" type="button">Update database</button><button class="ghost" id="btnReprice" type="button">Re-price inventory</button></div>
   <div class="small" style="margin-top:8px">Build <span class="mono">cards.json.gz</span> (prices for every printing) and <span class="mono">hashes.json.gz</span> (fingerprints for your sets) with <span class="mono">build_db.py</span> and put them next to this page. With them, pricing is instant and offline, and cards from fingerprinted sets are identified without any API call.</div>
 </section>
@@ -110,7 +120,11 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 </section>
 
 <section class="panel hits hidden" id="hits"><h2>At or above $<span id="thrLabel">1</span> in this scan</h2><div id="hitList"></div></section>
-<section class="panel hidden" id="results"><h2>This scan <span class="sub">(tap a card to fix or see details)</span></h2><div id="list"></div></section>
+<section class="panel hidden" id="results"><h2>This scan <span class="sub">(tap a card for details, to fix it, or to ask AI)</span></h2>
+  <div class="row hidden" id="aiAllRow"><button class="ghost" id="btnAiAll" type="button">Identify unknown cards with AI</button><span class="small" id="aiAllNote"></span></div>
+  <div class="row"><button class="ghost" id="btnAddByName" type="button">＋ Add a card by name</button><button class="danger" id="btnDeleteScan" type="button">Delete this scan</button></div>
+  <div id="list"></div>
+  <div class="legend"><span><i style="background:var(--ok)"></i>identified &amp; priced</span><span><i style="background:var(--gold)"></i>hit</span><span><i style="background:#f59e0b"></i>identified, price or printing unsure</span><span><i style="background:var(--bad)"></i>unknown — tap it</span></div></section>
 
 <section class="panel">
   <div class="tot"><span>Inventory on this phone</span><span id="invTot" class="mono">—</span></div>
@@ -120,10 +134,15 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <option value="type">Card type</option><option value="rarity">Rarity</option><option value="set">Set</option><option value="cond">Condition</option></select></div>
   <div class="row">
     <button class="ghost" id="btnShowInv" type="button">Show all</button>
-    <button class="ghost" id="btnCsv" type="button">CSV</button>
-    <button class="ghost" id="btnXlsx" type="button">Excel</button>
-    <button class="danger" id="btnClear" type="button">Clear</button>
+    <button class="ghost" id="btnSummary" type="button">Summary</button>
+    <button class="ghost" id="btnAddByName2" type="button">＋ By name</button>
   </div>
+  <div class="row"><span class="sub">Export</span><select id="exportFmt" style="flex:1;width:auto">
+    <option value="csv">CSV — everything</option><option value="xlsx">Excel — everything, one tab per list</option>
+    <option value="manabox">ManaBox CSV (import into ManaBox)</option><option value="moxfield">Moxfield CSV</option><option value="deckbox">Deckbox CSV</option>
+    <option value="backup">Backup file (inventory + learned fingerprints + settings)</option></select><button class="ghost" id="btnExport" type="button">Save</button></div>
+  <div class="row"><label class="file" style="flex:1;padding:10px" id="restoreDrop"><input type="file" id="restoreFile" accept=".json,application/json"><span>Restore from a backup file</span></label><button class="danger" id="btnClear" type="button">Clear</button></div>
+  <div id="summary" class="hidden" style="margin-top:12px"></div>
   <div id="invList" class="hidden" style="margin-top:12px"></div>
 </section>
 </main>
@@ -135,6 +154,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
     <div class="seg"><button id="modeSingle" type="button" class="on">One at a time</button><button id="modeSweep" type="button">Sweep</button></div>
     <span><span id="liveCount" class="mono">0</span> · <span id="liveList"></span></span>
     <label class="chk"><input type="checkbox" id="liveFoil"> foil</label>
+    <button class="ghost" id="liveMute" type="button" style="padding:4px 8px;font-size:13px;color:#fff;border-color:rgba(255,255,255,.35)">🔊</button>
   </div>
   <div class="liveHint" id="liveHint">Starting camera…</div>
   <div class="tune hidden" id="tune">
@@ -160,6 +180,12 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="box">
     <h2>Card</h2>
     <div class="detail"><img id="fixImg" alt="" loading="lazy"><div><div id="fixKv" class="kv"></div><div id="fixOracle" class="oracle"></div></div></div>
+    <div id="fixUnknown" class="hidden">
+      <h3>Closest fingerprint matches — tap the right one</h3>
+      <div id="fixCands" class="list" style="max-height:40vh"></div>
+      <div class="row"><button id="fixAi" type="button">Identify with AI (about 1¢)</button><span class="small" id="fixAiNote"></span></div>
+    </div>
+    <div class="row hidden" id="fixAiExactRow"><button class="ghost" id="fixAiExact" type="button">Read exact printing with AI (about 1¢)</button></div>
     <div class="field"><label for="fixName">Name</label><input type="text" id="fixName" autocomplete="off" placeholder="type a few letters…"></div>
     <div class="list hidden" id="fixNames"></div>
     <div class="field"><label>Printing</label><div class="list" id="fixPrints"><div class="empty" style="padding:10px 0">Pick a name to load printings</div></div></div>
@@ -420,7 +446,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 "use strict";
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "cardscan_settings", INV_KEY = "cardscan_inventory", LEARNED_KEY = "cardscan_learned";
-const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single" },
+const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip" },
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
 let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
 inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
@@ -438,12 +464,13 @@ const imageUrl = id => id ? `https://cards.scryfall.io/normal/front/${id[0]}/${i
 
 /* ================= settings, lists ================= */
 $("apiKey").value = settings.apiKey; $("model").value = settings.model; $("threshold").value = settings.threshold; $("voice").value = settings.voice;
+$("aiMode").value = settings.aiMode; $("strict").value = settings.strict; $("repeats").value = settings.repeats;
 $("thrLabel").textContent = fmtThr();
 $("btnSettings").onclick = () => $("settings").classList.toggle("hidden");
 $("saveSettings").onclick = () => {
   settings.apiKey = $("apiKey").value.trim(); settings.model = $("model").value.trim() || "claude-sonnet-5";
   settings.threshold = parseFloat($("threshold").value) || 0; settings.autoList = $("autoList").value === NEW_LIST ? "" : $("autoList").value;
-  settings.voice = $("voice").value; saveSettings();
+  settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; saveSettings();
   $("thrLabel").textContent = fmtThr(); $("settingsStatus").textContent = "Saved"; renderInvTotals();
   setTimeout(() => $("settingsStatus").textContent = "", 1500);
 };
@@ -468,6 +495,9 @@ function handleNewList(sel, fallback) {
 $("scanList").onchange = () => { settings.lastList = handleNewList($("scanList"), settings.lastList); saveSettings(); };
 $("autoList").onchange = () => { settings.autoList = handleNewList($("autoList"), ""); saveSettings(); };
 const flagged = r => r.price != null && r.price >= settings.threshold;
+/* red: not identified · orange: identified but price missing or printing unsure · green: identified and priced · gold: at/above threshold */
+const rowStatus = r => r.unknown ? "unknown" : r.price == null ? "unpriced" : flagged(r) ? "hit" : /printings|not verified|did not match|mismatch/.test(r.review || "") ? "check" : "ok";
+const STATUS_COLOR = { unknown: "#ff5c5c", unpriced: "#f59e0b", check: "#f59e0b", ok: "#6fbf8a", hit: "#e0b64a" };
 const tierOf = r => r.price == null ? "No price" : r.price >= settings.threshold ? `$${fmtThr()}+` : r.price >= 0.25 ? "25¢ – under threshold" : "Bulk (under 25¢)";
 const currentList = () => $("scanList").value === NEW_LIST ? settings.lastList : ($("scanList").value || "Unsorted");
 
@@ -507,7 +537,15 @@ async function loadDb(force) {
     db.hashes = new Uint32Array(ids.length * 16);
     ids.forEach((id, k) => { const hex = h.h[id]; for (let w = 0; w < 16; w++) db.hashes[k * 16 + w] = parseInt(hex.slice(w * 8, w * 8 + 8), 16) >>> 0; });
     $("hashStat").textContent = `Fingerprints: ${ids.length.toLocaleString()} cards`;
-  } catch (e) { db.hashes = null; $("hashStat").textContent = "Fingerprints: none (Claude reads every card)"; }
+  } catch (e) { db.hashes = null; $("hashStat").textContent = "Fingerprints: none yet"; }
+  renderCoverage();
+}
+function renderCoverage() {
+  if (!db.loaded) { $("coverage").textContent = ""; return; }
+  const covered = new Set(); (db.hashIds || []).forEach(id => { const i = db.byId.get(id); if (i != null) covered.add(db.cards[i][2]); });
+  const invSets = new Set(inventory.filter(r => r.set).map(r => r.set.toLowerCase())); const missing = Array.from(invSets).filter(s => !covered.has(s)).sort();
+  $("coverage").innerHTML = `Fingerprinted sets: ${covered.size ? esc(Array.from(covered).sort().join(", ")) : "none"}.` +
+    (missing.length ? ` Cards in your inventory from sets without fingerprints: <b>${esc(missing.join(", "))}</b> — run <span class="mono">python build_db.py --hash-sets ${esc(missing.join(","))}</span> and upload hashes.json.gz.` : "");
 }
 function dbCard(i) {
   const c = db.cards[i], o = db.oracle[c[14]] || [];
@@ -532,18 +570,27 @@ function localPrints(name, set, lang) {
 }
 function popcnt(x) { x = x - ((x >>> 1) & 0x55555555); x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return (((x + (x >>> 4)) & 0x0F0F0F0F) * 0x01010101) >>> 24; }
 function hexToWords(hex) { const w = new Uint32Array(16); for (let i = 0; i < 16; i++) w[i] = parseInt(hex.slice(i * 8, i * 8 + 8), 16) >>> 0; return w; }
-function nearestHash(hex) {                // -> {id, dist, second} over fingerprint DB + learned cache
-  const q = hexToWords(hex); let best = { id: null, dist: 999, second: 999 };
-  const consider = (id, words, off) => { let d = 0; for (let w = 0; w < 16; w++) { d += popcnt(q[w] ^ words[off + w]); if (d >= best.second) return; }
-    if (d < best.dist) { best = { id, dist: d, second: best.dist }; } else if (d < best.second) best.second = d; };
-  if (db.hashes) for (let k = 0; k < db.hashIds.length; k++) consider(db.hashIds[k], db.hashes, k * 16);
+function nearestHashes(hex, k) {           // -> top-k [{id, dist}] over fingerprint DB + learned cache, closest first
+  k = k || 3; const q = hexToWords(hex); const top = [];
+  const consider = (id, words, off) => { const worst = top.length === k ? top[k - 1].dist : 999; let d = 0;
+    for (let w = 0; w < 16; w++) { d += popcnt(q[w] ^ words[off + w]); if (d >= worst) return; }
+    let i = top.length; while (i > 0 && top[i - 1].dist > d) i--; top.splice(i, 0, { id, dist: d }); if (top.length > k) top.pop(); };
+  if (db.hashes) for (let n = 0; n < db.hashIds.length; n++) consider(db.hashIds[n], db.hashes, n * 16);
   for (const [h, id] of Object.entries(learned)) consider(id, hexToWords(h), 0);
-  return best;
+  return top;
 }
-const HASH_ACCEPT = 115, HASH_MARGIN = 20;
+function nearestHash(hex) { const t = nearestHashes(hex, 2); return { id: t.length ? t[0].id : null, dist: t.length ? t[0].dist : 999, second: t.length > 1 ? t[1].dist : 999 }; }
+const acceptDist = () => ({ loose: 135, normal: 115, strict: 95 }[settings.strict] || 115), HASH_MARGIN = 20;
 let learned = JSON.parse(localStorage.getItem(LEARNED_KEY) || "{}");
 function learn(hex, id) { if (!hex || !id) return; learned[hex] = id; const ks = Object.keys(learned); if (ks.length > 4000) delete learned[ks[0]]; localStorage.setItem(LEARNED_KEY, JSON.stringify(learned)); }
-const hashKnown = hex => { const m = nearestHash(hex); return (m.id && m.dist <= HASH_ACCEPT && (m.second - m.dist) >= HASH_MARGIN) ? m : null; };
+const hashKnown = hex => { const m = nearestHash(hex); return (m.id && m.dist <= acceptDist() && (m.second - m.dist) >= HASH_MARGIN) ? m : null; };
+
+/* crops of unknown / unsure cards are kept on the phone (IndexedDB) so AI can look at them later, on request */
+const cropStore = { mem: new Map(), dbp: null,
+  open() { if (this.dbp) return this.dbp; this.dbp = new Promise(res => { try { if (!window.indexedDB) return res(null); const rq = indexedDB.open("cardscan", 1); rq.onupgradeneeded = () => rq.result.createObjectStore("crops"); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); } catch (e) { res(null); } }); return this.dbp; },
+  async put(id, dataUrl) { const d = await this.open(); if (!d) { this.mem.set(id, dataUrl); return; } await new Promise(res => { const tx = d.transaction("crops", "readwrite"); tx.objectStore("crops").put(dataUrl, id); tx.oncomplete = res; tx.onerror = res; }); },
+  async get(id) { const d = await this.open(); if (!d) return this.mem.get(id) || null; return new Promise(res => { const rq = d.transaction("crops").objectStore("crops").get(id); rq.onsuccess = () => res(rq.result || null); rq.onerror = () => res(null); }); },
+  async del(id) { const d = await this.open(); if (!d) { this.mem.delete(id); return; } await new Promise(res => { const tx = d.transaction("crops", "readwrite"); tx.objectStore("crops").delete(id); tx.oncomplete = res; tx.onerror = res; }); } };
 
 /* 512-bit card fingerprint of a 700x977 crop canvas. Must match card_hash_from_image() in build_db.py. */
 function hashCard(canvas) {
@@ -723,13 +770,43 @@ function knownRow(m, hash, opts) {
     const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: card.name, notes: "", review: "", hash, via: "fingerprint" }, card, opts.foil);
     row.list = (settings.autoList && flagged(row)) ? settings.autoList : opts.list; return row; });
 }
-/* One crop -> row. Fingerprints (offline, instant) first, Claude only if needed. */
+/* One crop -> row. Fingerprints (offline, instant) first. Unknown cards become red rows that keep their crop;
+   Claude only runs when the user asks (or when AI use is set to automatic). */
+async function unknownRow(cropCanvas, hash, opts) {
+  const cands = nearestHashes(hash, 3);
+  const row = { id: newId(), ts: now(), photo: opts.photo, unknown: true, name: "Unknown card", name_read: "", set: "", number: "", rarity: "", foil: !!opts.foil, price: null, price_field: "",
+    review: "not identified — tap to pick a match or ask AI", notes: "", hash, via: "", cond: "NM", list: opts.list, list0: opts.list,
+    candidates: cands.map(c => ({ id: c.id, dist: c.dist })), color: "Unknown", type: "Unknown", desc: describeCard(cropCanvas) };
+  await cropStore.put(row.id, cropCanvas.toDataURL("image/jpeg", 0.85));
+  return row;
+}
+async function aiIdentify(row) {                  // Claude reads the stored crop; row is updated in place
+  const dataUrl = await cropStore.get(row.id); if (!dataUrl) throw new Error("no saved picture of this card");
+  const readings = (await askClaude([dataUrl.split(",")[1]], null)).filter(r => r && r.name);
+  if (!readings.length) throw new Error("AI saw no card in the picture");
+  const [card, reason] = await resolve(readings[0]); const rd = readings[0];
+  if (!card) throw new Error(`AI read "${rd.name}" but no such card is in the database`);
+  const wasUnknown = !!row.unknown; delete row.unknown; delete row.candidates; delete row.desc;
+  rowFromCard(row, card, row.foil || rd.foil === true); row.name_read = rd.name; row.via = "claude";
+  row.review = [reason, (rd.confidence || "").toLowerCase() === "low" ? "low confidence" : ""].filter(Boolean).join("; ");
+  row.notes = [rd.notes, (rd.frame && rd.frame !== "normal") ? rd.frame : ""].filter(Boolean).join("; ");
+  if (wasUnknown || row.list === row.list0) row.list = (settings.autoList && flagged(row)) ? settings.autoList : (row.list0 || row.list);
+  if (rd.set_code && rd.collector_number && !reason && row.hash) learn(row.hash, card.id);
+  if (!row.review) cropStore.del(row.id);
+  return row;
+}
 async function identifyCrop(cropCanvas, opts) {
   const hash = hashCard(cropCanvas), m = hashKnown(hash);
-  if (m) { const row = await knownRow(m, hash, opts); if (row) return row; }
-  const readings = (await askClaude([canvasToB64(cropCanvas)], null)).filter(r => r && r.name);
-  if (!readings.length) throw new Error("no card seen");
-  return buildRow(readings[0], opts.foil, opts.photo, opts.list, { hash, via: "claude" });
+  if (m) { const row = await knownRow(m, hash, opts); if (row) { row.dist = m.dist; return row; } }
+  const row = await unknownRow(cropCanvas, hash, opts);
+  if (settings.aiMode === "auto" && settings.apiKey) { try { await aiIdentify(row); } catch (e) { row.review = "AI could not read it: " + (e.message || e); } }
+  return row;
+}
+const unknownCount = rows => (rows || inventory).filter(r => r.unknown).length;
+async function aiIdentifyMany(rows, note) {
+  const todo = rows.filter(r => r.unknown); let done = 0, failed = 0;
+  for (const r of todo) { note(`AI reading ${done + failed + 1} of ${todo.length}…`); try { await aiIdentify(r); done++; } catch (e) { r.review = "AI could not read it: " + (e.message || e); failed++; } saveInv(); }
+  return { done, failed };
 }
 
 /* ================= image helpers, OpenCV ================= */
@@ -804,13 +881,13 @@ function positionWords(nx, ny) { const v = ny < 0.33 ? "top" : ny > 0.66 ? "bott
 /* ================= sound & voice ================= */
 const audio = { ctx: null };
 function beep(freq, ms, when) {
-  try { const a = audio.ctx; if (!a) return; const o = a.createOscillator(), g = a.createGain(); o.frequency.value = freq; o.connect(g); g.connect(a.destination);
+  try { const a = audio.ctx; if (!a || settings.mute) return; const o = a.createOscillator(), g = a.createGain(); o.frequency.value = freq; o.connect(g); g.connect(a.destination);
     const t = a.currentTime + (when || 0); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + (ms || 90) / 1000); o.start(t); o.stop(t + (ms || 90) / 1000 + 0.02); } catch (e) {}
 }
 function vib(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
 const sound = { lock: () => { beep(880, 80); vib(30); }, ok: () => beep(1320, 70), hit: () => { beep(1320, 80); beep(1760, 140, 0.09); vib([40, 40, 80]); }, bad: () => { beep(220, 160); beep(220, 220, 0.2); vib([80, 60, 80]); } };
 function speak(text, important) {
-  if (settings.voice === "off" || !("speechSynthesis" in window)) return;
+  if (settings.voice === "off" || settings.mute || !("speechSynthesis" in window)) return;
   if (settings.voice === "hits" && !important) return;
   try { if (important && speechSynthesis.speaking) speechSynthesis.cancel(); else if (speechSynthesis.speaking && !important) return;
     const u = new SpeechSynthesisUtterance(text); u.rate = 1.1; speechSynthesis.speak(u); } catch (e) {}
@@ -834,31 +911,21 @@ goBtn.onclick = async () => {
       let quads = []; try { quads = det.detectCards(mat); } catch (e) { console.warn("detect failed", e); }
       const crops = quads.map(q => { const m = det.warpCard(mat, q); const c = matToCanvas(cv, m); m.delete(); return c; });
       mat.delete();
-      const unknown = [];                                    // fingerprints first: known cards skip the API entirely
-      for (const c of crops) {
-        const hash = hashCard(c), m = hashKnown(hash);
-        if (m) { const row = await knownRow(m, hash, { photo, foil: foilBatch, list: scanList }); if (row) { scanRows.push(row); continue; } }
-        unknown.push({ c, hash });
-      }
-      if (unknown.length || crops.length < 2) {
-        const whole = canvasToB64(scaledCanvas(canvas, 1568), 0.85);
-        setStatus(`Reading ${unknown.length >= 2 ? unknown.length + " cards" : "the photo"}${tag}…`);
-        let readings = await askClaude(unknown.length >= 2 ? unknown.map(u => canvasToB64(u.c)) : null, whole);
-        readings = readings.filter(r => r && r.name);
-        setStatus(`Pricing${tag}…`);
-        for (const rd of readings) { const u = unknown.length >= 2 ? unknown[(rd.index || 0) - 1] : null; scanRows.push(await buildRow(rd, foilBatch, photo, scanList, u && !rd.extra ? { hash: u.hash, via: "claude" } : { via: "claude" })); }
-      }
+      setStatus(`Matching ${crops.length} cards${tag}…`);
+      for (const c of crops) scanRows.push(await identifyCrop(c, { photo, foil: foilBatch, list: scanList }));
+      if (!crops.length) setStatus(`No cards found in that photo${tag}. Plain background, cards apart, straight down.`, true);
     }
     inventory.push(...scanRows); saveInv(); refreshListSelects(); renderScan(scanRows); renderInvTotals();
     const moved = settings.autoList ? scanRows.filter(r => r.list === settings.autoList && settings.autoList !== scanList).length : 0;
-    setStatus(`${scanRows.length} cards read from ${files.length} photo${files.length > 1 ? "s" : ""} → "${scanList}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}.`);
+    const unk = unknownCount(scanRows);
+    setStatus(`${scanRows.length} cards found in ${files.length} photo${files.length > 1 ? "s" : ""} → "${scanList}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unk ? `. ${unk} unknown — red rows; tap one, or use the AI button.` : "."}`);
     filesEl.value = ""; fileLabel.textContent = "…or photos of 8–16 cards each"; drop.classList.remove("has");
   } catch (e) { console.error(e); setStatus("Scan failed: " + (e.message || e), true); goBtn.disabled = false; }
 };
 
 /* ================= live scanner (one at a time / sweep) ================= */
 const live = { on: false, paused: false, stream: null, track: null, caps: {}, cv: null, det: null, tracker: null, items: [], listName: "Unsorted", lastQuad: null, torch: false, raf: 0, lastT: 0,
-               mode: settings.mode || "single", tracks: [], nextTrack: 1, recent: [], retry: null, busy: 0 };
+               mode: settings.mode || "single", tracks: [], nextTrack: 1, recent: [], retry: null, busy: 0, seen: [], pausedBySheet: false };
 const video = $("liveVideo"), overlay = $("liveOverlay"), grab = document.createElement("canvas"), full = document.createElement("canvas");
 function setHint(t) { $("liveHint").textContent = t; }
 function setMode(m) { live.mode = m; settings.mode = m; saveSettings(); $("modeSingle").classList.toggle("on", m === "single"); $("modeSweep").classList.toggle("on", m === "sweep"); live.tracks = []; if (live.tracker) live.tracker.reset();
@@ -871,7 +938,7 @@ async function startLive() {
   try { if ("speechSynthesis" in window) speechSynthesis.getVoices(); } catch (e) {}
   live.listName = currentList(); settings.lastList = live.listName; saveSettings();
   $("liveList").textContent = live.listName; $("liveCount").textContent = "0"; $("liveLast").innerHTML = ""; $("liveFoil").checked = $("foil").checked;
-  live.items = []; live.tracks = []; live.recent = []; live.retry = null; live.paused = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden");
+  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.retry = null; live.paused = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden");
   $("live").classList.remove("hidden"); setHint("Starting camera…");
   try {
     live.cv = await loadCv(); live.det = makeDetector(live.cv); live.tracker = new live.det.LiveTracker({ lockFrames: 4, clearFrames: 5, iou: 0.8 });
@@ -893,10 +960,12 @@ function stopLive() {
   video.srcObject = null; $("live").classList.add("hidden");
   const rows = live.items.filter(i => i.row).map(i => i.row);
   if (rows.length) { renderScan(rows); refreshListSelects(); renderInvTotals();
-    const unread = live.items.filter(i => i.status === "unread").length, moved = rows.filter(r => r.list !== live.listName).length;
-    setStatus(`${rows.length} cards scanned → "${live.listName}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unread ? `. ${unread} not read.` : "."}`); }
+    const unread = live.items.filter(i => i.status === "unread").length, moved = rows.filter(r => r.list !== live.listName).length, unk = unknownCount(rows);
+    setStatus(`${rows.length} cards scanned → "${live.listName}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unk ? `. ${unk} unknown — red rows below.` : "."}${unread ? ` ${unread} not read.` : ""}`); }
 }
 $("liveDone").onclick = stopLive;
+$("liveMute").textContent = settings.mute ? "🔇" : "🔊";
+$("liveMute").onclick = () => { settings.mute = !settings.mute; saveSettings(); $("liveMute").textContent = settings.mute ? "🔇" : "🔊"; };
 $("livePause").onclick = () => { live.paused = !live.paused; $("livePause").textContent = live.paused ? "Resume" : "Pause"; setHint(live.paused ? "Paused" : "Go on"); };
 $("liveTorch").onclick = async () => { try { live.torch = !live.torch; await live.track.applyConstraints({ advanced: [{ torch: live.torch }] }); } catch (e) { setHint("This phone does not allow the light here."); } };
 $("livePlus").onclick = () => {
@@ -906,10 +975,11 @@ $("livePlus").onclick = () => {
 };
 function updateCount() { $("liveCount").textContent = String(live.items.filter(i => i.row).length); }
 video.addEventListener("click", () => { if (!live.on || live.paused) return; if (live.mode === "single" || live.retry) liveCapture(live.lastQuad || guideQuad(), null, live.retry); });
-overlay.addEventListener("click", () => video.click());
+overlay.addEventListener("click", () => { if (live.mode !== "sweep") video.click(); });
 function viewMap() { const vw = video.videoWidth, vh = video.videoHeight, cw = overlay.clientWidth, ch = overlay.clientHeight; const s = Math.max(cw / vw, ch / vh); return { s, ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2, vw, vh, cw, ch }; }
 function guideQuad() { const m = viewMap(); const h = 0.7 * m.ch / m.s, w = h * 63 / 88, cx = m.vw / 2, cy = m.vh / 2; return [{ x: cx - w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy + h / 2 }, { x: cx - w / 2, y: cy + h / 2 }]; }
-const trackColor = { pending: "rgba(255,255,255,.7)", reading: "rgba(255,255,255,.9)", ok: "#6fbf8a", hit: "#e0b64a", unread: "#ff5c5c", repeat: "#9aa3ad" };
+const trackColor = { pending: "rgba(255,255,255,.7)", reading: "rgba(255,255,255,.9)", ok: "#6fbf8a", hit: "#e0b64a", unpriced: "#f59e0b", check: "#f59e0b", unknown: "#ff5c5c", unread: "#ff5c5c", repeat: "#9aa3ad", seen: "#9aa3ad" };
+const itemStatus = it => it.row ? rowStatus(it.row) : it.status;
 function drawOverlay(quad, state) {
   const m = viewMap(), dpr = window.devicePixelRatio || 1;
   if (overlay.width !== Math.round(m.cw * dpr) || overlay.height !== Math.round(m.ch * dpr)) { overlay.width = Math.round(m.cw * dpr); overlay.height = Math.round(m.ch * dpr); }
@@ -917,11 +987,12 @@ function drawOverlay(quad, state) {
   const P = q => q.map(p => ({ x: p.x * m.s + m.ox, y: p.y * m.s + m.oy }));
   const poly = (q, color, width, dash) => { g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.beginPath(); q.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.stroke(); g.setLineDash([]); };
   if (live.mode === "single" || live.retry) { poly(P(guideQuad()), "rgba(255,255,255,.25)", 1.5, [8, 8]);
-    if (quad) poly(P(quad), state === "held" ? "rgba(255,255,255,.5)" : state === "lock" ? "#e0b64a" : "#6fbf8a", state === "lock" ? 5 : 3); }
-  if (live.mode === "sweep") for (const t of live.tracks) { const q = P(t.quad); poly(q, trackColor[t.status] || "#fff", t.status === "pending" ? 2 : 3, t.status === "reading" ? [6, 6] : null);
-    const label = (t.status === "ok" || t.status === "hit" || t.status === "repeat") && t.item && t.item.row ? `${t.item.row.name}  ${money(t.item.row.price)}` : t.status === "unread" ? "?  not read" : "";
+    if (quad) poly(P(quad), trackColor[state] || (state === "lock" ? "#e0b64a" : "rgba(255,255,255,.8)"), state === "lock" ? 5 : 3); }
+  if (live.mode === "sweep") for (const t of live.tracks) { if (t.item) t.status = itemStatus(t.item); const q = P(t.quad); poly(q, trackColor[t.status] || "#fff", t.status === "pending" ? 2 : 3, t.status === "reading" ? [6, 6] : null);
+    const r = t.item && t.item.row;
+    const label = t.status === "pending" || t.status === "reading" ? "" : r && !r.unknown ? `${t.seen ? "✓ " : ""}${r.name}  ${money(r.price)}` : r && r.unknown ? "?  unknown — tap to fix" : t.status === "unread" ? "?  not read" : "";
     if (label) { const cx = q.reduce((s, p) => s + p.x, 0) / 4, cy = q.reduce((s, p) => s + p.y, 0) / 4; g.font = "600 13px system-ui"; const w = g.measureText(label).width + 12;
-      g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(cx - w / 2, cy - 11, w, 22); g.fillStyle = trackColor[t.status]; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(label, cx, cy); } }
+      g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(cx - w / 2, cy - 11, w, 22); g.fillStyle = trackColor[t.status] || "#fff"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(label, cx, cy); } }
 }
 function liveLoop(t) {
   if (!live.on) return; live.raf = requestAnimationFrame(liveLoop);
@@ -934,7 +1005,7 @@ function liveLoop(t) {
   if (live.mode === "single" || live.retry) {
     let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
     if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
-    live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev);
+    live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev === "held" && live.items[0] ? itemStatus(live.items[0]) : ev);
     if (ev === "lock") liveCapture(quad, null, live.retry);
     else if (ev === "held") setHint("Got it — lift the card and place the next one");
     else if (ev === "cleared") setHint(live.retry ? "Center the unread card and hold still" : "Next card");
@@ -969,39 +1040,52 @@ async function liveCapture(quad, track, retryItem) {
   let crop, thumb, hash;
   try { const mat = cv.imread(full); const m = det.warpCard(mat, quad); crop = matToCanvas(cv, m); m.delete(); mat.delete(); thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7); hash = hashCard(crop); }
   catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } return; }
-  const rep = live.recent.find(r => Date.now() - r.t < 15000 && hamming(r.hash, hash) <= 60);   // same card seen seconds ago (sweep re-entry)
-  live.recent.push({ hash, t: Date.now() }); if (live.recent.length > 40) live.recent.shift();
+  const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
+  // sweep: a card already scanned this session (same fingerprint) is highlighted in its colour, not added again
+  const seen = track && !retryItem ? live.seen.find(s => hamming(s.hash, hash) <= 60) : null;
+  if (seen && (settings.repeats !== "count" || !seen.item.row)) { track.item = seen.item; track.seen = true; return; }
   const item = retryItem || { status: "reading", thumb }; if (retryItem) { retryItem.status = "reading"; retryItem.thumb = thumb; } else live.items.unshift(item);
   if (track) track.item = item; renderLiveLast();
-  const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
+  const seenEntry = { hash, item }; if (!retryItem) { live.seen.push(seenEntry); if (live.seen.length > 400) live.seen.shift(); }
   if (!track) setHint("Reading… place the next card");
   live.busy++;
   try {
-    const row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName });
-    if (rep && track) row.review = [row.review, "possible repeat of a card scanned seconds ago"].filter(Boolean).join("; ");
-    inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null;
-    if (track) track.status = flagged(row) ? "hit" : (rep ? "repeat" : "ok");
-    if (flagged(row)) { sound.hit(); speak(`${row.name}, ${dollars(row.price)}${live.mode === "sweep" ? `, ${pos}` : ""}`, true); }
+    let row;
+    if (seen && seen.item.row) { row = Object.assign({}, seen.item.row, { id: newId(), ts: now() }); if (row.unknown) { await cropStore.put(row.id, await cropStore.get(seen.item.row.id)); } }
+    else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName });
+    inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb;
+    const st = rowStatus(row); if (track) track.status = st;
+    if (st === "unknown") { sound.bad(); speak(`Unknown card. Looks ${row.desc}, ${pos}. Tap it to fix.`, true); }
+    else if (st === "hit") { sound.hit(); speak(`${row.name}, ${dollars(row.price)}${live.mode === "sweep" ? `, ${pos}` : ""}`, true); }
     else { sound.ok(); speak(`${row.name}, ${dollars(row.price)}`, false); }
     if (retryItem) live.retry = null;
     updateCount();
   } catch (e) {
     item.status = "unread"; item.error = e.message || String(e); item.desc = describeCard(crop); item.pos = pos;
-    if (track) track.status = "unread";
+    if (track) track.status = "unread"; live.seen = live.seen.filter(s => s !== seenEntry);
     sound.bad(); speak(`Couldn't read a card. Looks ${item.desc}, ${pos}. Hold still on it to retry.`, true);
     if (!track && !live.retry) setHint("Not read — tap its row to retry");
   } finally { live.busy--; }
   renderLiveLast();
 }
 function renderLiveLast() {
-  $("liveLast").innerHTML = live.items.slice(0, 3).map(i => {
+  const unk = live.items.filter(i => i.row && i.row.unknown).length;
+  $("liveLast").innerHTML = (unk ? `<div class="sub" style="color:#ff7b7b;padding:2px 0 4px">${unk} unknown — tap a red row to fix it now, or after Done</div>` : "") + live.items.slice(0, 3).map(i => {
     const k = live.items.indexOf(i);
     if (i.status === "reading") return `<div class="li reading"><img src="${i.thumb}" alt=""><div><div class="n">Reading…</div></div><div></div></div>`;
     if (i.status === "unread") return `<div class="li unread" data-k="${k}"><img src="${i.thumb}" alt=""><div><div class="n">Not read — ${esc(i.desc || "")}, ${esc(i.pos || "")}</div><div class="sub">${esc(i.error)} · tap to retry</div></div><div></div></div>`;
-    const r = i.row; return `<div class="li"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? " · instant" : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
+    const r = i.row;
+    if (r.unknown) return `<div class="li unknown" data-row="${r.id}"><img src="${i.thumb}" alt=""><div><div class="n">Unknown card — ${esc(r.desc || "")}</div><div class="sub">tap to pick a match or ask AI</div></div><div></div></div>`;
+    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[rowStatus(r)]};padding-left:8px"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? " · instant" : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
   }).join("");
 }
-$("liveLast").addEventListener("click", e => { const el = e.target.closest(".li.unread"); if (!el) return; live.retry = live.items[+el.dataset.k]; live.tracker.reset(); setHint("Center that card and hold still — it will retry"); });
+$("liveLast").addEventListener("click", e => {
+  const u = e.target.closest(".li.unread"); if (u) { live.retry = live.items[+u.dataset.k]; live.tracker.reset(); setHint("Center that card and hold still — it will retry"); return; }
+  const el = e.target.closest(".li[data-row]"); if (el) openFix(el.dataset.row);
+});
+overlay.addEventListener("click", e => { if (live.mode !== "sweep") return; const m = viewMap(); const x = (e.clientX - m.ox) / m.s, y = (e.clientY - m.oy) / m.s;
+  const hit = live.tracks.find(t => t.item && t.item.row && x >= Math.min(...t.quad.map(p => p.x)) && x <= Math.max(...t.quad.map(p => p.x)) && y >= Math.min(...t.quad.map(p => p.y)) && y <= Math.max(...t.quad.map(p => p.y)));
+  if (hit) { e.stopPropagation(); openFix(hit.item.row.id); } });
 
 /* ---- camera tuning: lock focus/exposure so the camera stops hunting ---- */
 async function applyCamera() {
@@ -1042,14 +1126,31 @@ $("tuneAuto").onclick = async () => {
 
 /* ================= rendering ================= */
 function cardHtml(r) {
-  return `<div class="card" data-id="${r.id}" tabindex="0" role="button"><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}${r.variant ? " · " + esc(r.variant) : ""}${r.set_name ? " · " + esc(r.set_name) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.cond && r.cond !== "NM" ? " · " + esc(r.cond) : ""}${r.color ? " · " + esc(r.color) : ""}${r.type ? " · " + esc(r.type) : ""}${r.rarity ? " · " + esc(r.rarity) : ""}</div>${r.review ? `<div class="rev">check: ${esc(r.review)}</div>` : ""}</div><div class="price">${money(r.price)}${r.price_at_scan != null && r.price != null && Math.abs(r.price - r.price_at_scan) >= 0.01 ? `<div class="sub">${r.price > r.price_at_scan ? "▲" : "▼"} was ${money(r.price_at_scan)}</div>` : ""}</div></div>`;
+  const st = rowStatus(r);
+  if (r.unknown) return `<div class="card s-unknown" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div><div class="n">Unknown card${r.desc ? " — " + esc(r.desc) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.foil ? " · foil" : ""} · tap to pick a match or ask AI</div>${r.review && !/not identified/.test(r.review) ? `<div class="rev">${esc(r.review)}</div>` : ""}</div><div class="price">—</div></div>`;
+  return `<div class="card s-${st}" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}${r.variant ? " · " + esc(r.variant) : ""}${r.set_name ? " · " + esc(r.set_name) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.cond && r.cond !== "NM" ? " · " + esc(r.cond) : ""}${r.color ? " · " + esc(r.color) : ""}${r.type ? " · " + esc(r.type) : ""}${r.rarity ? " · " + esc(r.rarity) : ""}</div>${r.review ? `<div class="rev">check: ${esc(r.review)}</div>` : ""}</div><div class="price">${money(r.price)}${r.price_at_scan != null && r.price != null && Math.abs(r.price - r.price_at_scan) >= 0.01 ? `<div class="sub">${r.price > r.price_at_scan ? "▲" : "▼"} was ${money(r.price_at_scan)}</div>` : ""}</div></div>`;
 }
 let lastScanIds = [];
 function renderScan(rows) {
   lastScanIds = rows.map(r => r.id); const hits = rows.filter(flagged).sort((a, b) => b.price - a.price);
   $("hits").classList.toggle("hidden", !hits.length); $("hitList").innerHTML = hits.map(cardHtml).join("");
-  $("results").classList.remove("hidden"); $("list").innerHTML = rows.map(cardHtml).join("") || `<div class="empty">No cards read.</div>`;
+  $("results").classList.remove("hidden"); $("list").innerHTML = rows.slice().sort((a, b) => (a.unknown ? -1 : 0) - (b.unknown ? -1 : 0)).map(cardHtml).join("") || `<div class="empty">No cards read.</div>`;
+  const unk = unknownCount(rows); $("aiAllRow").classList.toggle("hidden", !unk);
+  $("btnAiAll").textContent = `Identify ${unk} unknown card${unk === 1 ? "" : "s"} with AI`; $("aiAllNote").textContent = unk ? `about ${unk}¢, one call each` : "";
 }
+$("btnDeleteScan").onclick = () => { if (!lastScanIds.length || !confirm(`Delete the ${lastScanIds.length} cards from this scan?`)) return; inventory.filter(r => lastScanIds.includes(r.id)).forEach(r => cropStore.del(r.id)); inventory = inventory.filter(r => !lastScanIds.includes(r.id)); lastScanIds = []; saveInv(); $("results").classList.add("hidden"); $("hits").classList.add("hidden"); renderInvTotals(); setStatus("Scan deleted."); };
+function addByName() {
+  const row = { id: newId(), ts: now(), photo: "typed", unknown: true, name: "Unknown card", name_read: "", set: "", number: "", rarity: "", foil: $("foil").checked, price: null, price_field: "", review: "", notes: "", via: "manual", cond: "NM", list: currentList(), list0: currentList(), candidates: [], color: "Unknown", type: "Unknown", desc: "" };
+  inventory.push(row); saveInv(); if (!lastScanIds.length || $("results").classList.contains("hidden")) lastScanIds = []; lastScanIds.push(row.id); renderScan(inventory.filter(r => lastScanIds.includes(r.id)));
+  openFix(row.id); $("fixUnknown").classList.add("hidden"); $("fixKv").innerHTML = "<div>Type the card name, then tap the printing.</div>"; $("fixImg").src = ""; $("fixName").focus();
+}
+$("btnAddByName").onclick = addByName; $("btnAddByName2").onclick = addByName;
+$("btnAiAll").onclick = async () => {
+  if (!settings.apiKey) { $("settings").classList.remove("hidden"); setStatus("Add your API key in Settings first.", true); return; }
+  $("btnAiAll").disabled = true; const rows = inventory.filter(r => lastScanIds.includes(r.id));
+  const res = await aiIdentifyMany(rows, m => setStatus(m + "…")); $("btnAiAll").disabled = false;
+  rerenderScan(); renderInvTotals(); setStatus(`AI identified ${res.done} card${res.done === 1 ? "" : "s"}${res.failed ? `, ${res.failed} still unknown` : ""}.`);
+};
 function rerenderScan() { renderScan(inventory.filter(r => lastScanIds.includes(r.id))); }
 function renderInvTotals() {
   const total = inventory.reduce((s, r) => s + (r.price || 0), 0), adj = inventory.reduce((s, r) => s + (r.price || 0) * (COND[r.cond] || 1), 0), hits = inventory.filter(flagged).length;
@@ -1072,6 +1173,19 @@ function renderInvList() {
 }
 $("groupBy").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
 $("search").oninput = () => { $("invList").classList.remove("hidden"); $("btnShowInv").textContent = "Hide"; renderInvList(); };
+$("btnSummary").onclick = () => { const s = $("summary"); s.classList.toggle("hidden"); if (!s.classList.contains("hidden")) renderSummary(); };
+function renderSummary() {
+  const rows = inventory.filter(r => !r.unknown), unk = inventory.length - rows.length;
+  const total = rows.reduce((a, r) => a + (r.price || 0), 0), adj = rows.reduce((a, r) => a + (r.price || 0) * (COND[r.cond] || 1), 0);
+  const byList = new Map(); inventory.forEach(r => { const k = r.list || "Unsorted"; const v = byList.get(k) || { n: 0, v: 0 }; v.n++; v.v += r.price || 0; byList.set(k, v); });
+  const tiers = { hits: rows.filter(flagged), mid: rows.filter(r => !flagged(r) && r.price >= 0.25), bulk: rows.filter(r => r.price != null && r.price < 0.25) };
+  const top = rows.slice().sort((a, b) => (b.price || 0) - (a.price || 0)).slice(0, 10);
+  const foils = rows.filter(r => r.foil).length, sets = new Set(rows.map(r => r.set)).size;
+  $("summary").innerHTML = `<div class="grp"><span>Totals</span><span class="mono">${inventory.length} cards</span></div>
+    <div class="sub">Market value $${total.toFixed(2)}${Math.abs(adj - total) >= 0.01 ? ` · $${adj.toFixed(2)} after condition` : ""} · ${tiers.hits.length} at $${fmtThr()}+ ($${tiers.hits.reduce((a, r) => a + r.price, 0).toFixed(2)}) · ${tiers.mid.length} between 25¢ and $${fmtThr()} · ${tiers.bulk.length} bulk · ${foils} foil · ${sets} sets${unk ? ` · <span style="color:#ff7b7b">${unk} unknown</span>` : ""}</div>
+    <div class="grp"><span>By list</span><span></span></div>` + Array.from(byList.entries()).sort((a, b) => b[1].v - a[1].v).map(([k, v]) => `<div class="tot"><span>${esc(k)}</span><span class="mono">${v.n} · $${v.v.toFixed(2)}</span></div>`).join("") +
+    `<div class="grp"><span>Top 10</span><span></span></div>` + top.map(cardHtml).join("");
+}
 $("btnShowInv").onclick = () => { const l = $("invList"); l.classList.toggle("hidden"); $("btnShowInv").textContent = l.classList.contains("hidden") ? "Show all" : "Hide"; if (!l.classList.contains("hidden")) renderInvList(); };
 $("btnClear").onclick = () => { if (confirm("Delete the whole inventory on this phone? Export first if you need it.")) { inventory = []; saveInv(); renderInvTotals(); renderInvList(); $("results").classList.add("hidden"); $("hits").classList.add("hidden"); } };
 document.addEventListener("click", e => { const c = e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); });
@@ -1082,8 +1196,46 @@ refreshListSelects(); renderInvTotals();
 const COLS = [["list", "List"], ["name", "Card"], ["set", "Set"], ["set_name", "Set name"], ["number", "#"], ["variant", "Variant"], ["rarity", "Rarity"], ["foil", "Foil"], ["cond", "Condition"], ["price", "TCG market ($)"], ["adj", "Adjusted ($)"], ["price_at_scan", "Price at scan ($)"], ["eur", "Cardmarket (€)"], ["flag", "Flag"], ["tier", "Price tier"], ["color", "Color"], ["type", "Type"], ["mv", "Mana value"], ["artist", "Artist"], ["released", "Released"], ["lang", "Lang"], ["review", "Review"], ["notes", "Notes"], ["note", "My note"], ["name_read", "Name as read"], ["via", "Identified by"], ["photo", "Source"], ["ts", "Scanned"], ["uri", "Scryfall"], ["image", "Image"], ["oracle_text", "Oracle text"]];
 function exportRows(rows) { return (rows || inventory).slice().sort((a, b) => (b.price || -1) - (a.price || -1)).map(r => { const o = {}; COLS.forEach(([k, h]) => { o[h] = k === "flag" ? (flagged(r) ? "YES" : "") : k === "foil" ? (r.foil ? "yes" : "no") : k === "tier" ? tierOf(r) : k === "list" ? (r.list || "Unsorted") : k === "adj" ? (r.price == null ? "" : Math.round(r.price * (COND[r.cond] || 1) * 100) / 100) : (r[k] == null ? "" : r[k]); }); return o; }); }
 function download(name, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
-$("btnCsv").onclick = () => { const rows = exportRows(); const hdr = COLS.map(c => c[1]); const csv = [hdr, ...rows.map(r => hdr.map(h => `"${String(r[h]).replace(/"/g, '""')}"`))].map(l => l.join(",")).join("\n"); download("inventory.csv", new Blob([csv], { type: "text/csv" })); };
-$("btnXlsx").onclick = () => {
+const CONDS_LONG = { NM: "near_mint", LP: "lightly_played", MP: "moderately_played", HP: "heavily_played", DMG: "damaged" };
+const CONDS_DECKBOX = { NM: "Near Mint", LP: "Lightly Played", MP: "Played", HP: "Heavily Played", DMG: "Poor" };
+function stacked() {                        // identical printing + finish + condition + list -> one line with a quantity
+  const m = new Map();
+  inventory.filter(r => !r.unknown).forEach(r => { const k = [r.scryfall_id || r.name, r.foil ? "f" : "n", r.cond || "NM", r.list || ""].join("|"); if (!m.has(k)) m.set(k, Object.assign({ qty: 0 }, r)); m.get(k).qty++; });
+  return Array.from(m.values()).sort((a, b) => (b.price || -1) - (a.price || -1));
+}
+const csvOf = (hdr, lines) => [hdr, ...lines].map(l => l.map(v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`).join(",")).join("\n");
+function exportExternal(fmt) {
+  const rows = stacked(); let csv, name;
+  if (fmt === "manabox") { name = "manabox-import.csv";
+    csv = csvOf(["Name", "Set code", "Set name", "Collector number", "Foil", "Rarity", "Quantity", "ManaBox ID", "Scryfall ID", "Purchase price", "Misprint", "Altered", "Condition", "Language", "Purchase price currency"],
+      rows.map(r => [r.name, (r.set || "").toLowerCase(), r.set_name || "", r.number || "", r.foil ? "foil" : "normal", r.rarity || "", r.qty, "", r.scryfall_id || "", "", "false", "false", CONDS_LONG[r.cond] || "near_mint", r.lang || "en", "USD"])); }
+  else if (fmt === "moxfield") { name = "moxfield-import.csv";
+    csv = csvOf(["Count", "Tradelist Count", "Name", "Edition", "Condition", "Language", "Foil", "Tags", "Last Modified", "Collector Number", "Alter", "Proxy", "Purchase Price"],
+      rows.map(r => [r.qty, 0, r.name, (r.set || "").toLowerCase(), { NM: "NM", LP: "LP", MP: "MP", HP: "HP", DMG: "D" }[r.cond] || "NM", (r.lang || "en") === "en" ? "English" : r.lang, r.foil ? "foil" : "", r.list || "", r.ts || "", r.number || "", "FALSE", "FALSE", ""])); }
+  else { name = "deckbox-import.csv";
+    csv = csvOf(["Count", "Tradelist Count", "Name", "Edition", "Card Number", "Condition", "Language", "Foil", "Signed", "Artist Proof", "Altered Art", "Misprint", "Promo", "Textless", "My Price"],
+      rows.map(r => [r.qty, 0, r.name, r.set_name || r.set || "", r.number || "", CONDS_DECKBOX[r.cond] || "Near Mint", (r.lang || "en") === "en" ? "English" : r.lang, r.foil ? "foil" : "", "", "", "", "", /promo/.test(r.variant || "") ? "promo" : "", "", r.price != null ? r.price.toFixed(2) : ""])); }
+  download(name, new Blob([csv], { type: "text/csv" }));
+}
+function exportBackup() {
+  const data = { app: "cardscan", version: 1, saved: new Date().toISOString(), settings: Object.assign({}, settings, { apiKey: "" }), inventory, learned };
+  download(`cardscan-backup-${today()}.json`, new Blob([JSON.stringify(data)], { type: "application/json" }));
+}
+$("btnExport").onclick = () => { const f = $("exportFmt").value; if (f === "csv") exportCsv(); else if (f === "xlsx") exportXlsx(); else if (f === "backup") exportBackup(); else exportExternal(f); };
+$("restoreFile").onchange = async () => {
+  const file = $("restoreFile").files[0]; if (!file) return;
+  try { const data = JSON.parse(await file.text()); if (data.app !== "cardscan" || !Array.isArray(data.inventory)) throw new Error("not a cardscan backup");
+    const mode = inventory.length ? (confirm(`Backup has ${data.inventory.length} cards. OK = merge into your ${inventory.length} cards, Cancel = replace everything.`) ? "merge" : "replace") : "replace";
+    const ids = new Set(inventory.map(r => r.id)); const add = data.inventory.filter(r => mode === "replace" || !ids.has(r.id));
+    inventory = mode === "replace" ? data.inventory : inventory.concat(add); inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
+    if (data.learned) { learned = Object.assign(mode === "replace" ? {} : learned, data.learned); localStorage.setItem(LEARNED_KEY, JSON.stringify(learned)); }
+    if (data.settings) { const keep = settings.apiKey; Object.assign(settings, data.settings, { apiKey: keep || data.settings.apiKey || "" }); saveSettings(); }
+    saveInv(); refreshListSelects(); renderInvTotals(); renderCoverage(); setStatus(`Restored ${mode === "replace" ? data.inventory.length : add.length} cards from the backup.`);
+  } catch (e) { setStatus("Restore failed: " + (e.message || e), true); }
+  $("restoreFile").value = "";
+};
+function exportCsv() { const rows = exportRows(); const hdr = COLS.map(c => c[1]); const csv = [hdr, ...rows.map(r => hdr.map(h => `"${String(r[h]).replace(/"/g, '""')}"`))].map(l => l.join(",")).join("\n"); download("inventory.csv", new Blob([csv], { type: "text/csv" })); };
+function exportXlsx() {
   if (!window.XLSX) return setStatus("Excel export library did not load; use CSV.", true);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows()), "All cards");
   const hits = inventory.filter(flagged); if (hits.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows(hits)), `$${fmtThr()}+`.slice(0, 31));
@@ -1104,29 +1256,65 @@ async function repriceAll() {
   setStatus(`Re-priced: ${changed} cards changed, total $${before.toFixed(2)} → $${after.toFixed(2)}.`);
 }
 loadDb(false);
+if ("serviceWorker" in navigator && location.protocol === "https:") { navigator.serviceWorker.register("sw.js").catch(() => {}); }
 
 /* ================= fix / details sheet ================= */
 let fixRow = null, fixTimer = null, fixPrintsCache = [];
 function openFix(id) {
   fixRow = inventory.find(r => r.id === id); if (!fixRow) return;
-  $("fixName").value = fixRow.name || fixRow.name_read || ""; $("fixFoil").checked = !!fixRow.foil; $("fixCond").value = fixRow.cond || "NM"; $("fixNote").value = fixRow.note || "";
+  if (live.on && !live.paused) { live.paused = true; live.pausedBySheet = true; }
+  $("fixName").value = fixRow.unknown ? "" : (fixRow.name || fixRow.name_read || ""); $("fixFoil").checked = !!fixRow.foil; $("fixCond").value = fixRow.cond || "NM"; $("fixNote").value = fixRow.note || "";
   fillListSelect($("fixList"), fixRow.list || "Unsorted"); $("fixNames").classList.add("hidden"); $("fixNames").innerHTML = "";
-  renderDetails(); $("sheet").classList.add("open"); loadPrints($("fixName").value);
+  renderDetails(); $("sheet").classList.add("open");
+  if (fixRow.unknown) { $("fixPrints").innerHTML = `<div class="empty" style="padding:10px 0">Or type the name above to pick a printing by hand</div>`; renderCandidates(); }
+  else loadPrints($("fixName").value);
 }
-function renderDetails() {
-  const r = fixRow; $("fixImg").src = r.image || imageUrl(r.scryfall_id) || ""; $("fixImg").alt = r.name || "";
+async function renderCandidates() {
+  const r = fixRow; $("fixUnknown").classList.remove("hidden"); $("fixAiNote").textContent = settings.apiKey ? "" : "needs an API key (Settings)";
+  const cands = (r.candidates || []).slice(0, 3);
+  if (!cands.length) { $("fixCands").innerHTML = `<div class="empty" style="padding:10px 0">No fingerprints loaded yet — ask AI, or type the name.</div>`; return; }
+  const cards = await Promise.all(cands.map(c => cardById(c.id)));
+  $("fixCands").innerHTML = cards.map((c, i) => c ? `<div class="cand" data-id="${c.id}"><img src="${esc(c.image)}" alt="" loading="lazy"><div><div>${esc(c.name)}</div><div class="sub mono">${esc(c.set.toUpperCase())} #${esc(c.collector_number)}${c.variant ? " · " + esc(c.variant) : ""} · match ${Math.max(0, Math.round(100 - cands[i].dist / 2.56))}%</div></div><div class="price">${c.prices.usd != null ? "$" + Number(c.prices.usd).toFixed(2) : "—"}</div></div>` : "").join("");
+  $("fixCands").onclick = async e => { const o = e.target.closest(".cand"); if (!o || !fixRow) return; const c = cards.find(x => x && x.id === o.dataset.id); if (!c) return; acceptCard(c, true); };
+}
+function acceptCard(c, learnIt) {                 // user picked a printing for the current row
+  const r = fixRow; delete r.unknown; delete r.candidates; delete r.desc; r.review = ""; r.via = r.via || "manual";
+  rowFromCard(r, c, $("fixFoil").checked); if (learnIt && r.hash) learn(r.hash, c.id); if (settings.autoList && flagged(r) && r.list === (r.list0 || r.list)) r.list = settings.autoList;
+  cropStore.del(r.id); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); $("fixUnknown").classList.add("hidden"); $("fixName").value = r.name; loadPrints(r.name);
+}
+$("fixAi").onclick = async () => {
+  const r = fixRow; if (!r) return; if (!settings.apiKey) { $("fixAiNote").textContent = "Add an API key in Settings first."; return; }
+  $("fixAi").disabled = true; $("fixAiNote").textContent = "AI reading…";
+  try { await aiIdentify(r); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); $("fixUnknown").classList.add("hidden"); $("fixAiExactRow").classList.toggle("hidden", !r.review); $("fixName").value = r.name; loadPrints(r.name); $("fixAiNote").textContent = ""; }
+  catch (e) { $("fixAiNote").textContent = e.message || String(e); }
+  $("fixAi").disabled = false;
+};
+$("fixAiExact").onclick = async () => {
+  const r = fixRow; if (!r) return; if (!settings.apiKey) { setStatus("Add an API key in Settings first.", true); return; }
+  $("fixAiExact").disabled = true; $("fixAiExact").textContent = "AI reading…";
+  try { await aiIdentify(r); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); loadPrints(r.name); $("fixAiExactRow").classList.toggle("hidden", !r.review); }
+  catch (e) { setStatus("AI: " + (e.message || e), true); }
+  $("fixAiExact").disabled = false; $("fixAiExact").textContent = "Read exact printing with AI (about 1¢)";
+};
+async function renderDetails() {
+  const r = fixRow;
+  if (r.unknown) { $("fixImg").src = (await cropStore.get(r.id)) || ""; $("fixImg").alt = "your photo of the card";
+    $("fixKv").innerHTML = `<div><b>Not identified.</b> Looks ${esc(r.desc || "")}.</div><div>Pick one of the closest matches below, type the name, or ask AI.</div>`; $("fixOracle").textContent = ""; $("fixAiExactRow").classList.add("hidden"); return; }
+  $("fixUnknown").classList.add("hidden");
+  cropStore.get(r.id).then(c => $("fixAiExactRow").classList.toggle("hidden", !(c && /printings|not verified|did not match/.test(r.review || ""))));
+  $("fixImg").src = r.image || imageUrl(r.scryfall_id) || ""; $("fixImg").alt = r.name || "";
   const kv = [["Set", `${r.set} #${r.number}${r.set_name ? " · " + r.set_name : ""}`], ["Rarity / finish", `${r.rarity || "?"}${r.foil ? " · foil" : ""}${r.variant ? " · " + r.variant : ""}`],
     ["Price", `${money(r.price)} TCGplayer market${r.eur != null ? ` · €${Number(r.eur).toFixed(2)} Cardmarket` : ""}${r.price_at_scan != null && r.price != null && r.price !== r.price_at_scan ? ` · was ${money(r.price_at_scan)} at scan` : ""}`],
-    ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? "by fingerprint (offline)" : r.via === "claude" ? "by Claude vision" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
+    ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? `by fingerprint (offline${r.dist != null ? `, match ${Math.max(0, Math.round(100 - r.dist / 2.56))}%` : ""})` : r.via === "claude" ? "by Claude vision" : r.via === "manual" ? "by you" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
   $("fixKv").innerHTML = kv.filter(([, v]) => v).map(([k, v]) => `<div><b>${esc(k)}:</b> ${k === "Scryfall" ? v : esc(v)}</div>`).join("");
   $("fixOracle").textContent = r.oracle_text || "";
 }
-function closeFix() { $("sheet").classList.remove("open"); fixRow = null; }
+function closeFix() { $("sheet").classList.remove("open"); if (fixRow && fixRow.unknown && fixRow.photo === "typed") { inventory = inventory.filter(r => r !== fixRow); lastScanIds = lastScanIds.filter(i => i !== fixRow.id); saveInv(); rerenderScan(); renderInvTotals(); } fixRow = null; if (live.pausedBySheet) { live.paused = false; live.pausedBySheet = false; if (live.tracker) live.tracker.reset(); } }
 $("sheet").addEventListener("click", e => { if (e.target === $("sheet")) closeFix(); });
 $("fixList").onchange = () => handleNewList($("fixList"), fixRow ? fixRow.list : "Unsorted");
 $("fixDone").onclick = async () => { const row = fixRow; closeFix(); if (!row) return; row.foil = $("fixFoil").checked; row.cond = $("fixCond").value; row.note = $("fixNote").value.trim();
-  const l = $("fixList").value; if (l && l !== NEW_LIST) row.list = l; if (row.scryfall_id) { const c = await cardById(row.scryfall_id); if (c) rowFromCard(row, c, row.foil); } saveInv(); refreshListSelects(); rerenderScan(); renderInvTotals(); };
-$("fixDelete").onclick = () => { if (fixRow && confirm(`Delete "${fixRow.name}"?`)) { inventory = inventory.filter(r => r !== fixRow); saveInv(); rerenderScan(); renderInvTotals(); } closeFix(); };
+  const l = $("fixList").value; if (l && l !== NEW_LIST) row.list = l; if (row.scryfall_id && !row.unknown) { const c = await cardById(row.scryfall_id); if (c) rowFromCard(row, c, row.foil); } saveInv(); refreshListSelects(); rerenderScan(); renderInvTotals(); };
+$("fixDelete").onclick = () => { if (fixRow && confirm(`Delete "${fixRow.name}"?`)) { cropStore.del(fixRow.id); inventory = inventory.filter(r => r !== fixRow); saveInv(); rerenderScan(); renderInvTotals(); } closeFix(); };
 $("fixName").oninput = () => { clearTimeout(fixTimer); const q = $("fixName").value.trim(); if (q.length < 3) return; fixTimer = setTimeout(async () => { const names = await nameSuggestions(q); $("fixNames").innerHTML = names.slice(0, 12).map(n => `<div class="opt" data-name="${esc(n)}">${esc(n)}</div>`).join(""); $("fixNames").classList.toggle("hidden", !names.length); }, 250); };
 $("fixNames").addEventListener("click", e => { const o = e.target.closest(".opt"); if (!o) return; $("fixName").value = o.dataset.name; $("fixNames").classList.add("hidden"); loadPrints(o.dataset.name); });
 async function loadPrints(name) {
@@ -1135,7 +1323,8 @@ async function loadPrints(name) {
   if (!prints.length) { box.innerHTML = `<div class="empty" style="padding:10px 0">No printings found for that name.</div>`; return; }
   box.innerHTML = prints.map(c => `<div class="opt${fixRow && c.id === fixRow.scryfall_id ? " sel" : ""}" data-id="${c.id}"><span>${esc(c.set.toUpperCase())} #${esc(c.collector_number)} · ${esc(c.set_name)}${c.variant ? " · " + esc(c.variant) : ""}</span><span class="mono">${c.prices.usd != null ? "$" + Number(c.prices.usd).toFixed(2) : "—"}${c.prices.usd_foil != null ? " / ✶$" + Number(c.prices.usd_foil).toFixed(2) : ""}</span></div>`).join("");
   box.onclick = e => { const o = e.target.closest(".opt"); if (!o || !fixRow) return; const c = fixPrintsCache.find(p => p.id === o.dataset.id); if (!c) return;
-    fixRow.review = ""; rowFromCard(fixRow, c, $("fixFoil").checked); if (fixRow.hash) learn(fixRow.hash, c.id); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); box.querySelectorAll(".opt").forEach(x => x.classList.toggle("sel", x === o)); };
+    if (fixRow.unknown) { acceptCard(c, true); return; }
+    fixRow.review = ""; rowFromCard(fixRow, c, $("fixFoil").checked); if (fixRow.hash) learn(fixRow.hash, c.id); cropStore.del(fixRow.id); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); box.querySelectorAll(".opt").forEach(x => x.classList.toggle("sel", x === o)); };
 }
 })();
 </script>
