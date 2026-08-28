@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#14171c">
+<title>cardscan</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='14' y='6' width='36' height='52' rx='4' fill='%23e0b64a'/%3E%3Crect x='19' y='11' width='26' height='22' rx='2' fill='%2314171c'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2314171c'/%3E%3Crect x='14' y='6' width='36' height='52' rx='4' fill='%23e0b64a'/%3E%3Crect x='19' y='11' width='26' height='22' rx='2' fill='%2314171c'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#14171c;--panel:#1d2229;--line:#2c333d;--ink:#e8e6df;--mute:#9aa3ad;--gold:#e0b64a;--ok:#6fbf8a;--warn:#e0805a;--bad:#d9534f}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+main{max-width:640px;margin:0 auto;padding:18px 14px 60px}
+h1{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin:0 0 14px;display:flex;justify-content:space-between;align-items:center}
+h1 button{background:none;border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:500}
+h2{margin:0 0 10px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+h3{margin:14px 0 6px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.panel.hits{border-color:var(--gold)}.panel.hits h2{color:var(--gold)}
+label.file{display:block;border:2px dashed #3a4350;border-radius:12px;padding:20px 12px;text-align:center;color:var(--mute);cursor:pointer}
+label.file input{display:none}label.file.has{border-style:solid;border-color:var(--ok);color:var(--ink)}
+.row{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+button{background:var(--ink);color:#111;border:0;border-radius:10px;padding:12px 18px;font-weight:600;font-size:16px;cursor:pointer}
+button.ghost{background:none;border:1px solid var(--line);color:var(--ink);font-weight:500;padding:10px 14px}
+button.danger{background:none;border:1px solid var(--bad);color:var(--bad);font-weight:500;padding:10px 14px}
+button.big{width:100%;padding:16px;font-size:18px}
+button:disabled{opacity:.4}
+.chk{display:flex;gap:8px;align-items:center;color:var(--mute);font-size:15px}
+input[type=text],input[type=password],input[type=number],input[type=search],select,textarea{width:100%;background:#0f1216;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:16px}
+input[type=range]{width:100%}
+.field{margin-top:10px}.field label{display:block;color:var(--mute);font-size:13px;margin-bottom:4px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.card{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+.card:first-child{border-top:0}.card .n{font-weight:600}.sub{color:var(--mute);font-size:13px}
+.price{font-variant-numeric:tabular-nums;text-align:right;font-weight:600;white-space:nowrap}
+.hits .price{color:var(--gold);font-size:18px}
+.rev{color:var(--warn);font-size:12px}
+.tot{display:flex;justify-content:space-between;color:var(--mute);font-size:14px;gap:10px}
+.status{color:var(--mute);min-height:22px;margin-top:10px;font-size:15px}
+.status.err{color:var(--bad)}
+.empty{color:var(--mute);font-size:14px}
+.small{font-size:13px;color:var(--mute)}
+a{color:var(--ink)}
+.grp{display:flex;justify-content:space-between;gap:8px;margin:14px 0 4px;color:var(--mute);font-size:12px;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px}
+.grp:first-child{margin-top:0}.grp .mono{letter-spacing:0;text-transform:none}
+@media (prefers-reduced-motion:no-preference){.busy{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.4}}}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;z-index:9}
+.sheet.open{display:flex}
+.sheet .box{background:var(--panel);width:100%;max-width:640px;margin:0 auto;border-radius:16px 16px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+.opt{padding:10px 0;border-top:1px solid var(--line);cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.opt:first-child{border-top:0}.opt.sel{color:var(--gold)}
+.list{max-height:34vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:0 10px;margin-top:8px}
+.detail{display:grid;grid-template-columns:120px 1fr;gap:12px;margin-top:8px}
+.detail img{width:120px;border-radius:6px;background:#0f1216;min-height:167px}
+.detail .kv{font-size:13px;color:var(--mute)}.detail .kv b{color:var(--ink);font-weight:500}
+.oracle{font-size:13px;color:var(--ink);margin-top:6px;white-space:pre-wrap}
+.hidden{display:none !important}
+button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.dbstat{display:flex;justify-content:space-between;gap:8px;font-size:14px;color:var(--mute);margin-top:8px;flex-wrap:wrap}
+/* live scanner */
+.live{position:fixed;inset:0;background:#000;z-index:20}
+.live video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.live canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.liveTop{position:absolute;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;background:linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,0));color:#fff;font-size:14px}
+.liveTop .chk{color:#fff}
+.seg{display:flex;border:1px solid rgba(255,255,255,.4);border-radius:8px;overflow:hidden}
+.seg button{background:none;color:#fff;border:0;border-radius:0;padding:6px 10px;font-size:13px;font-weight:500}
+.seg button.on{background:#fff;color:#111}
+.liveHint{position:absolute;left:0;right:0;top:30%;text-align:center;color:#fff;font-size:16px;text-shadow:0 1px 6px rgba(0,0,0,.9);padding:0 24px;pointer-events:none}
+.liveBottom{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.85) 30%)}
+.liveBottom .row{margin-top:8px}
+.liveBottom button{padding:10px 12px;font-size:15px}
+.liveBottom button.ghost{color:#fff;border-color:rgba(255,255,255,.35)}
+.li{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:6px 0;color:#fff;border-top:1px solid rgba(255,255,255,.12);cursor:pointer}
+.li:first-child{border-top:0}.li img{width:44px;height:61px;object-fit:cover;border-radius:4px;background:#222}
+.li .n{font-weight:600;font-size:15px}.li .sub{color:#c8ccd2}.li .price{color:var(--gold)}
+.li.reading{opacity:.75}.li.error .n{color:var(--warn)}.li.unread .n{color:#ff7b7b}
+.tune{position:absolute;left:8px;right:8px;top:calc(56px + env(safe-area-inset-top));background:rgba(20,23,28,.94);border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--ink);max-height:60vh;overflow:auto}
+.tune .field{margin-top:8px}.meter{height:8px;background:#2c333d;border-radius:4px;overflow:hidden;margin-top:4px}.meter i{display:block;height:100%;background:var(--ok);width:0}
+</style>
+</head>
+<body>
+<main>
+<h1><span>cardscan</span><button id="btnSettings" type="button">Settings</button></h1>
+
+<section class="panel hidden" id="settings">
+  <h2>Settings</h2>
+  <div class="field"><label for="apiKey">Anthropic API key (stays on this phone; used only for cards the fingerprints don't know)</label><input type="password" id="apiKey" autocomplete="off" placeholder="sk-ant-…"></div>
+  <div class="field"><label for="model">Model</label><input type="text" id="model" value="claude-sonnet-5"></div>
+  <div class="field"><label for="threshold">Flag cards at or above ($)</label><input type="number" id="threshold" value="1" step="0.25" min="0"></div>
+  <div class="field"><label for="autoList">Cards at or above that go to this list instead (optional)</label><select id="autoList"><option value="">— keep with the scan —</option></select></div>
+  <div class="field"><label for="voice">Voice feedback while scanning</label><select id="voice"><option value="hits">Hits and problems</option><option value="all">Every card</option><option value="off">Off (beeps only)</option></select></div>
+  <div class="row"><button id="saveSettings" type="button">Save</button><span class="status" id="settingsStatus"></span></div>
+  <h3>Offline database</h3>
+  <div class="dbstat"><span id="dbStat">Not loaded</span><span id="hashStat"></span></div>
+  <div class="row"><button class="ghost" id="btnDb" type="button">Update database</button><button class="ghost" id="btnReprice" type="button">Re-price inventory</button></div>
+  <div class="small" style="margin-top:8px">Build <span class="mono">cards.json.gz</span> (prices for every printing) and <span class="mono">hashes.json.gz</span> (fingerprints for your sets) with <span class="mono">build_db.py</span> and put them next to this page. With them, pricing is instant and offline, and cards from fingerprinted sets are identified without any API call.</div>
+</section>
+
+<section class="panel">
+  <button class="big" id="btnLive" type="button">📷 Scan cards</button>
+  <div class="row"><span class="sub">Save to list</span><select id="scanList" style="flex:1;width:auto"></select>
+    <label class="chk"><input type="checkbox" id="foil"> foil</label></div>
+  <div class="row" style="margin-top:14px"><label class="file" id="drop" style="flex:1"><input type="file" id="files" accept="image/*" capture="environment" multiple>
+    <span id="fileLabel">…or photos of 8–16 cards each</span></label><button id="go" type="button" disabled>Scan photos</button></div>
+  <div class="status" id="status"></div>
+</section>
+
+<section class="panel hits hidden" id="hits"><h2>At or above $<span id="thrLabel">1</span> in this scan</h2><div id="hitList"></div></section>
+<section class="panel hidden" id="results"><h2>This scan <span class="sub">(tap a card to fix or see details)</span></h2><div id="list"></div></section>
+
+<section class="panel">
+  <div class="tot"><span>Inventory on this phone</span><span id="invTot" class="mono">—</span></div>
+  <div class="row"><input type="search" id="search" placeholder="Search name, set, list…" style="flex:1"></div>
+  <div class="row"><span class="sub">Group by</span><select id="groupBy" style="flex:1;width:auto">
+    <option value="list">List</option><option value="tier">Price tier</option><option value="color">Color</option>
+    <option value="type">Card type</option><option value="rarity">Rarity</option><option value="set">Set</option><option value="cond">Condition</option></select></div>
+  <div class="row">
+    <button class="ghost" id="btnShowInv" type="button">Show all</button>
+    <button class="ghost" id="btnCsv" type="button">CSV</button>
+    <button class="ghost" id="btnXlsx" type="button">Excel</button>
+    <button class="danger" id="btnClear" type="button">Clear</button>
+  </div>
+  <div id="invList" class="hidden" style="margin-top:12px"></div>
+</section>
+</main>
+
+<div class="live hidden" id="live">
+  <video id="liveVideo" playsinline muted autoplay></video>
+  <canvas id="liveOverlay"></canvas>
+  <div class="liveTop">
+    <div class="seg"><button id="modeSingle" type="button" class="on">One at a time</button><button id="modeSweep" type="button">Sweep</button></div>
+    <span><span id="liveCount" class="mono">0</span> · <span id="liveList"></span></span>
+    <label class="chk"><input type="checkbox" id="liveFoil"> foil</label>
+  </div>
+  <div class="liveHint" id="liveHint">Starting camera…</div>
+  <div class="tune hidden" id="tune">
+    <div class="tot"><b>Camera</b><span class="small" id="tuneNote"></span></div>
+    <div class="field"><label>Sharpness <span id="sharpVal" class="mono"></span></label><div class="meter"><i id="sharpBar"></i></div></div>
+    <div id="tuneControls"></div>
+    <div class="row"><button class="ghost" id="tuneAuto" type="button">Auto-tune focus</button><button class="ghost" id="tuneReset" type="button">Back to auto</button><button class="ghost" id="tuneClose" type="button">Close</button></div>
+  </div>
+  <div class="liveBottom">
+    <div id="liveLast"></div>
+    <div class="row">
+      <button class="ghost" id="livePause" type="button">Pause</button>
+      <button class="ghost" id="livePlus" type="button">+1 same</button>
+      <button class="ghost" id="liveTune" type="button">Camera</button>
+      <button class="ghost hidden" id="liveTorch" type="button">Light</button>
+      <span style="flex:1"></span>
+      <button id="liveDone" type="button">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="box">
+    <h2>Card</h2>
+    <div class="detail"><img id="fixImg" alt="" loading="lazy"><div><div id="fixKv" class="kv"></div><div id="fixOracle" class="oracle"></div></div></div>
+    <div class="field"><label for="fixName">Name</label><input type="text" id="fixName" autocomplete="off" placeholder="type a few letters…"></div>
+    <div class="list hidden" id="fixNames"></div>
+    <div class="field"><label>Printing</label><div class="list" id="fixPrints"><div class="empty" style="padding:10px 0">Pick a name to load printings</div></div></div>
+    <div class="row">
+      <div class="field" style="flex:1;margin:0"><label for="fixList">List</label><select id="fixList"></select></div>
+      <div class="field" style="flex:1;margin:0"><label for="fixCond">Condition</label><select id="fixCond"><option value="NM">Near mint</option><option value="LP">Lightly played</option><option value="MP">Moderately played</option><option value="HP">Heavily played</option><option value="DMG">Damaged</option></select></div>
+    </div>
+    <div class="field"><label for="fixNote">Note</label><input type="text" id="fixNote" placeholder="signed, altered, bent corner…"></div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="fixFoil"> foil</label>
+      <span style="flex:1"></span>
+      <button class="danger" id="fixDelete" type="button">Delete</button>
+      <button id="fixDone" type="button">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>/* cardscan detector for OpenCV.js. Works in the browser and in Node (@techstark/opencv-js).
+   makeDetector(cv) -> { detectCards(rgbaMat) -> quads, warpCard(rgbaMat, quad) -> Mat (RGBA, upright, CROP_W x CROP_H) } */
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory();
+  else root.makeDetector = factory();
+})(typeof self !== "undefined" ? self : this, function () {
+  const CROP_W = 700, CROP_H = 977;
+
+  function makeDetector(cv) {
+    function orderPoints(pts) {                    // tl, tr, br, bl
+      const s = pts.map(p => p.x + p.y), d = pts.map(p => p.y - p.x);
+      const argmin = a => a.indexOf(Math.min(...a)), argmax = a => a.indexOf(Math.max(...a));
+      return [pts[argmin(s)], pts[argmin(d)], pts[argmax(s)], pts[argmax(d)]];
+    }
+    function rectPoints(rect, scale) {
+      const p = cv.RotatedRect.points(rect);
+      return orderPoints(p.map(q => ({ x: q.x / scale, y: q.y / scale })));
+    }
+    function bbox(q) {
+      const xs = q.map(p => p.x), ys = q.map(p => p.y);
+      return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    }
+    function iou(a, b) {
+      const A = bbox(a), B = bbox(b);
+      const ix = Math.max(0, Math.min(A[2], B[2]) - Math.max(A[0], B[0]));
+      const iy = Math.max(0, Math.min(A[3], B[3]) - Math.max(A[1], B[1]));
+      const inter = ix * iy, ua = (A[2] - A[0]) * (A[3] - A[1]) + (B[2] - B[0]) * (B[3] - B[1]) - inter;
+      return ua > 0 ? inter / ua : 0;
+    }
+    function splitRect(rect, n) {                  // touching cards read as one blob -> n rects along the long side
+      const { center, size, angle } = rect;
+      const longIsW = size.width >= size.height, L = longIsW ? size.width : size.height;
+      const th = angle * Math.PI / 180;
+      const ux = longIsW ? Math.cos(th) : -Math.sin(th), uy = longIsW ? Math.sin(th) : Math.cos(th);
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const off = (-(n - 1) / 2 + i) * L / n;
+        out.push({ center: { x: center.x + ux * off, y: center.y + uy * off },
+                   size: { width: longIsW ? size.width / n : size.width, height: longIsW ? size.height : size.height / n },
+                   angle });
+      }
+      return out;
+    }
+    function contoursOf(mask) {
+      const contours = new cv.MatVector(), hier = new cv.Mat();
+      cv.findContours(mask, contours, hier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      hier.delete();
+      return contours;
+    }
+    function estimateShort(mask, smallArea) {
+      const cs = contoursOf(mask), shorts = [];
+      for (let i = 0; i < cs.size(); i++) {
+        const c = cs.get(i), a = cv.contourArea(c);
+        if (a >= 0.003 * smallArea && a <= 0.35 * smallArea) {
+          const r = cv.minAreaRect(c), w = r.size.width, h = r.size.height;
+          if (Math.min(w, h) >= 1 && Math.max(w, h) / Math.min(w, h) >= 1.2 &&
+              Math.max(w, h) / Math.min(w, h) <= 1.6 && a / (w * h) >= 0.85) shorts.push(Math.min(w, h));
+        }
+        c.delete();
+      }
+      cs.delete();
+      if (!shorts.length) return null;
+      shorts.sort((x, y) => x - y);
+      return shorts[Math.floor(shorts.length / 2)];
+    }
+    function cardsFromMask(mask, smallArea, scale, short, minFrac, maxFrac) {
+      minFrac = minFrac == null ? 0.003 : minFrac; maxFrac = maxFrac == null ? 0.35 : maxFrac;
+      const quads = [];
+      let cs = contoursOf(mask);
+      const solid = cv.Mat.zeros(mask.rows, mask.cols, cv.CV_8UC1);
+      cv.drawContours(solid, cs, -1, new cv.Scalar(255), -1);
+      cs.delete();
+      if (short == null) short = 0.09 * Math.sqrt(smallArea);
+      let ok = Math.max(3, Math.floor(short * 0.18)); if (ok % 2 === 0) ok += 1;
+      const ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(ok, ok));
+      const opened = new cv.Mat();
+      cv.morphologyEx(solid, opened, cv.MORPH_OPEN, ker);
+      ker.delete(); solid.delete();
+      cs = contoursOf(opened);
+      const cardArea = short * short * 1.4;
+      for (let i = 0; i < cs.size(); i++) {
+        const c = cs.get(i), a = cv.contourArea(c);
+        if (a >= minFrac * smallArea && a <= maxFrac * smallArea) {
+          const r = cv.minAreaRect(c), w = r.size.width, h = r.size.height;
+          if (Math.min(w, h) >= 1) {
+            const ar = Math.max(w, h) / Math.min(w, h), fill = a / (w * h);
+            if (ar >= 1.15 && ar <= 1.75 && fill >= 0.78 && (maxFrac > 0.5 || (a >= 0.45 * cardArea && a <= 2.2 * cardArea)))
+              quads.push(rectPoints(r, scale));
+            else if (fill >= 0.72 && a >= 0.8 * cardArea * 2 && a <= 1.25 * cardArea * 2 && ar >= 2.3 && ar <= 3.2)
+              splitRect(r, 2).forEach(x => quads.push(rectPoints(x, scale)));
+            else if (fill >= 0.72 && a >= 0.8 * cardArea * 3 && a <= 1.25 * cardArea * 3 && ar >= 3.6 && ar <= 4.8)
+              splitRect(r, 3).forEach(x => quads.push(rectPoints(x, scale)));
+          }
+        }
+        c.delete();
+      }
+      cs.delete(); opened.delete();
+      return quads;
+    }
+
+    function detectCards(rgba, opts) {
+      opts = opts || {};
+      const minFrac = opts.minFrac == null ? 0.003 : opts.minFrac, maxFrac = opts.maxFrac == null ? 0.35 : opts.maxFrac;
+      const H = rgba.rows, W = rgba.cols, scale = Math.min(1, (opts.target || 1600) / Math.max(H, W));
+      const small = new cv.Mat();
+      if (scale < 1) cv.resize(rgba, small, new cv.Size(Math.round(W * scale), Math.round(H * scale)), 0, 0, cv.INTER_AREA);
+      else rgba.copyTo(small);
+      const smallArea = small.rows * small.cols;
+      const gray = new cv.Mat(), blur = new cv.Mat();
+      cv.cvtColor(small, gray, cv.COLOR_RGBA2GRAY);
+      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+      const k = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+      const quads = [];
+      const add = list => list.forEach(q => { if (quads.every(e => iou(q, e) < 0.35)) quads.push(q); });
+
+      const masks = [];
+      const otsu = new cv.Mat();
+      cv.threshold(blur, otsu, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+      masks.push(otsu);
+      for (const t of [100, 130, 150]) { const m = new cv.Mat(); cv.threshold(blur, m, t, 255, cv.THRESH_BINARY_INV); masks.push(m); }
+      let short = null;
+      masks.forEach((m, i) => {
+        const closed = new cv.Mat();
+        cv.morphologyEx(m, closed, cv.MORPH_CLOSE, k);
+        if (i === 0) short = estimateShort(closed, smallArea);
+        add(cardsFromMask(closed, smallArea, scale, short, minFrac, maxFrac));
+        closed.delete(); m.delete();
+      });
+      const bright = new cv.Mat(), brightC = new cv.Mat();
+      cv.threshold(blur, bright, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      cv.morphologyEx(bright, brightC, cv.MORPH_CLOSE, k);
+      add(cardsFromMask(brightC, smallArea, scale, short, minFrac, maxFrac));
+      bright.delete(); brightC.delete(); k.delete(); blur.delete(); gray.delete(); small.delete();
+
+      if (!quads.length) return [];
+      const cy = q => q.reduce((s, p) => s + p.y, 0) / 4, cx = q => q.reduce((s, p) => s + p.x, 0) / 4;
+      const heights = quads.map(q => { const b = bbox(q); return b[3] - b[1]; }).sort((a, b) => a - b);
+      const tol = 0.5 * heights[Math.floor(heights.length / 2)];
+      quads.sort((a, b) => cy(a) - cy(b));
+      const rows = [[quads[0]]];
+      for (const q of quads.slice(1)) {
+        const cur = rows[rows.length - 1];
+        if (Math.abs(cy(q) - cy(cur[cur.length - 1])) < tol) cur.push(q); else rows.push([q]);
+      }
+      const ordered = [];
+      rows.forEach(r => ordered.push(...r.sort((a, b) => cx(a) - cx(b))));
+      return ordered;
+    }
+
+    function upright(card) {                       // title bar (light) near the top, black info strip at the bottom
+      const gray = new cv.Mat();
+      cv.cvtColor(card, gray, cv.COLOR_RGBA2GRAY);
+      const h = gray.rows, w = gray.cols, x0 = Math.floor(w * 0.12), x1 = Math.floor(w * 0.88);
+      const top = gray.roi(new cv.Rect(x0, Math.floor(h * 0.035), x1 - x0, Math.floor(h * 0.04)));
+      const bot = gray.roi(new cv.Rect(x0, Math.floor(h * 0.925), x1 - x0, Math.floor(h * 0.04)));
+      const t = cv.mean(top)[0], b = cv.mean(bot)[0];
+      top.delete(); bot.delete(); gray.delete();
+      if (t >= b) return card;
+      const r = new cv.Mat(); cv.rotate(card, r, cv.ROTATE_180); card.delete(); return r;
+    }
+
+    function warpCard(rgba, quad) {
+      let [tl, tr, br, bl] = quad;
+      const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const w = (dist(tr, tl) + dist(br, bl)) / 2, h = (dist(bl, tl) + dist(br, tr)) / 2;
+      let src = [tl, tr, br, bl];
+      if (w > h) src = [bl, tl, tr, br];             // sideways card -> portrait
+      const srcM = cv.matFromArray(4, 1, cv.CV_32FC2, src.flatMap(p => [p.x, p.y]));
+      const dstM = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, CROP_W - 1, 0, CROP_W - 1, CROP_H - 1, 0, CROP_H - 1]);
+      const M = cv.getPerspectiveTransform(srcM, dstM);
+      const out = new cv.Mat();
+      cv.warpPerspective(rgba, out, M, new cv.Size(CROP_W, CROP_H), cv.INTER_CUBIC, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+      srcM.delete(); dstM.delete(); M.delete();
+      return upright(out);
+    }
+
+    /* One card in view (live scanning). Returns a quad in the image's coordinates, or null. */
+    function detectOne(rgba) {
+      const H = rgba.rows, W = rgba.cols, scale = Math.min(1, 640 / Math.max(H, W));
+      const small = new cv.Mat();
+      if (scale < 1) cv.resize(rgba, small, new cv.Size(Math.round(W * scale), Math.round(H * scale)), 0, 0, cv.INTER_AREA);
+      else rgba.copyTo(small);
+      const smallArea = small.rows * small.cols;
+      const gray = new cv.Mat(), blur = new cv.Mat(), edges = new cv.Mat();
+      cv.cvtColor(small, gray, cv.COLOR_RGBA2GRAY);
+      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+      cv.Canny(blur, edges, 50, 150);
+      const k3 = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+      cv.dilate(edges, edges, k3); k3.delete();
+      let best = null;
+      const cs = contoursOf(edges);
+      for (let i = 0; i < cs.size(); i++) {
+        const c = cs.get(i), a = cv.contourArea(c);
+        if (a >= 0.04 * smallArea && a <= 0.97 * smallArea) {
+          const approx = new cv.Mat(); cv.approxPolyDP(c, approx, 0.03 * cv.arcLength(c, true), true);
+          const n = approx.rows; approx.delete();
+          if (n >= 4 && n <= 8) {
+            const r = cv.minAreaRect(c), w = r.size.width, h = r.size.height;
+            const ar = Math.max(w, h) / Math.min(w, h), fill = a / (w * h);
+            if (Math.min(w, h) >= 1 && ar >= 1.15 && ar <= 1.75 && fill >= 0.8 && (!best || a > best.area)) best = { area: a, quad: rectPoints(r, scale) };
+          }
+        }
+        c.delete();
+      }
+      cs.delete(); edges.delete(); blur.delete(); gray.delete(); small.delete();
+      if (best) return best.quad;
+      const q = detectCards(rgba, { minFrac: 0.04, maxFrac: 0.97, target: 640 });   // threshold-based fallback
+      if (!q.length) return null;
+      const areaOf = x => { const b = bbox(x); return (b[2] - b[0]) * (b[3] - b[1]); };
+      return q.sort((a, b) => areaOf(b) - areaOf(a))[0];
+    }
+
+    /* Decides when a live view is steady enough to capture, and when the card has been removed. */
+    class LiveTracker {
+      constructor(o) { o = o || {}; this.lockFrames = o.lockFrames || 4; this.clearFrames = o.clearFrames || 5; this.iouMin = o.iou || 0.8; this.reset(); }
+      reset() { this.state = "idle"; this.last = null; this.stable = 0; this.missed = 0; }
+      update(quad) {
+        if (quad) {
+          this.missed = 0;
+          if (this.state === "cooldown") return "held";           // same card still in view: wait for it to leave
+          this.stable = (this.last && iou(quad, this.last) >= this.iouMin) ? this.stable + 1 : 1;
+          this.last = quad;
+          if (this.stable >= this.lockFrames) { this.state = "cooldown"; this.stable = 0; return "lock"; }
+          return "tracking";
+        }
+        this.missed++; this.stable = 0; this.last = null;
+        if (this.state === "cooldown" && this.missed >= this.clearFrames) { this.state = "idle"; return "cleared"; }
+        return null;
+      }
+    }
+
+    return { detectCards, detectOne, warpCard, LiveTracker, CROP_W, CROP_H };
+  }
+  return makeDetector;
+});
+</script>
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const SETTINGS_KEY = "cardscan_settings", INV_KEY = "cardscan_inventory", LEARNED_KEY = "cardscan_learned";
+const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single" },
+  JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
+let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
+inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
+const saveInv = () => localStorage.setItem(INV_KEY, JSON.stringify(inventory));
+const saveSettings = () => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const money = v => v == null ? "—" : "$" + v.toFixed(2);
+const COND = { NM: 1, LP: 0.85, MP: 0.7, HP: 0.5, DMG: 0.3 };
+const RARITY = { c: "common", u: "uncommon", r: "rare", m: "mythic", s: "special", b: "bonus" };
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const now = () => new Date().toISOString().slice(0, 16).replace("T", " ");
+const today = () => new Date().toISOString().slice(0, 10);
+const imageUrl = id => id ? `https://cards.scryfall.io/normal/front/${id[0]}/${id[1]}/${id}.jpg` : "";
+
+/* ================= settings, lists ================= */
+$("apiKey").value = settings.apiKey; $("model").value = settings.model; $("threshold").value = settings.threshold; $("voice").value = settings.voice;
+$("thrLabel").textContent = fmtThr();
+$("btnSettings").onclick = () => $("settings").classList.toggle("hidden");
+$("saveSettings").onclick = () => {
+  settings.apiKey = $("apiKey").value.trim(); settings.model = $("model").value.trim() || "claude-sonnet-5";
+  settings.threshold = parseFloat($("threshold").value) || 0; settings.autoList = $("autoList").value === NEW_LIST ? "" : $("autoList").value;
+  settings.voice = $("voice").value; saveSettings();
+  $("thrLabel").textContent = fmtThr(); $("settingsStatus").textContent = "Saved"; renderInvTotals();
+  setTimeout(() => $("settingsStatus").textContent = "", 1500);
+};
+function fmtThr() { const t = settings.threshold; return Number.isInteger(t) ? String(t) : t.toFixed(2); }
+const NEW_LIST = "__new__";
+function allLists() {
+  const s = new Set(settings.lists || []); inventory.forEach(r => s.add(r.list || "Unsorted")); s.add("Unsorted");
+  return Array.from(s).sort((a, b) => a === "Unsorted" ? 1 : b === "Unsorted" ? -1 : a.localeCompare(b));
+}
+function fillListSelect(sel, value, extraFirst) {
+  const lists = allLists();
+  sel.innerHTML = (extraFirst || "") + lists.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join("") + `<option value="${NEW_LIST}">＋ New list…</option>`;
+  sel.value = value && (lists.includes(value) || value === "") ? value : (extraFirst ? "" : lists[0]);
+}
+function refreshListSelects() { fillListSelect($("scanList"), settings.lastList); fillListSelect($("autoList"), settings.autoList, `<option value="">— keep with the scan —</option>`); }
+function handleNewList(sel, fallback) {
+  if (sel.value !== NEW_LIST) return sel.value;
+  const name = (prompt("Name for the new list (e.g. Sell, Trade binder, Box 3):") || "").trim();
+  if (name && !allLists().includes(name)) { settings.lists = allLists().concat(name); saveSettings(); }
+  refreshListSelects(); sel.value = name || fallback; return sel.value;
+}
+$("scanList").onchange = () => { settings.lastList = handleNewList($("scanList"), settings.lastList); saveSettings(); };
+$("autoList").onchange = () => { settings.autoList = handleNewList($("autoList"), ""); saveSettings(); };
+const flagged = r => r.price != null && r.price >= settings.threshold;
+const tierOf = r => r.price == null ? "No price" : r.price >= settings.threshold ? `$${fmtThr()}+` : r.price >= 0.25 ? "25¢ – under threshold" : "Bulk (under 25¢)";
+const currentList = () => $("scanList").value === NEW_LIST ? settings.lastList : ($("scanList").value || "Unsorted");
+
+/* ================= offline database (cards.json.gz / hashes.json.gz) ================= */
+const db = { loaded: false, built: "", cards: [], oracle: [], sets: {}, byKey: new Map(), byName: new Map(), names: [], byId: new Map(),
+             hashes: null, hashIds: [], hashBuilt: "" };
+async function fetchGz(url, force) {
+  let resp = null;
+  const hasCache = typeof caches !== "undefined";
+  try { if (hasCache && !force) resp = await (await caches.open("cardscan-db")).match(url); } catch (e) {}
+  if (!resp) {
+    resp = await fetch(url, { cache: force ? "reload" : "default" });
+    if (!resp.ok) throw new Error(`${url}: ${resp.status}`);
+    try { if (hasCache) await (await caches.open("cardscan-db")).put(url, resp.clone()); } catch (e) {}
+  }
+  const buf = new Uint8Array(await resp.arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(window.pako ? window.pako.ungzip(buf) : buf));
+}
+async function loadDb(force) {
+  try {
+    const j = await fetchGz("cards.json.gz", force);
+    db.cards = j.cards; db.oracle = j.oracle; db.sets = j.sets || {}; db.built = j.built || "";
+    db.byKey = new Map(); db.byName = new Map(); db.byId = new Map();
+    j.cards.forEach((c, i) => {
+      db.byId.set(c[0], i);
+      const key = c[5] === "en" ? `${c[2]}/${c[3]}` : `${c[2]}/${c[3]}/${c[5]}`;
+      if (!db.byKey.has(key)) db.byKey.set(key, i);
+      const full = c[1].toLowerCase();
+      for (const n of new Set([full, ...full.split("//").map(s => s.trim())])) { if (!db.byName.has(n)) db.byName.set(n, []); db.byName.get(n).push(i); }
+    });
+    db.names = Array.from(db.byName.keys()); db.loaded = true;
+    $("dbStat").textContent = `Prices: ${db.cards.length.toLocaleString()} printings, built ${db.built}`;
+  } catch (e) { db.loaded = false; $("dbStat").textContent = "Prices: no cards.json.gz found (using Scryfall live)"; }
+  try {
+    const h = await fetchGz("hashes.json.gz", force);
+    const ids = Object.keys(h.h || {}); db.hashIds = ids; db.hashBuilt = h.built || "";
+    db.hashes = new Uint32Array(ids.length * 16);
+    ids.forEach((id, k) => { const hex = h.h[id]; for (let w = 0; w < 16; w++) db.hashes[k * 16 + w] = parseInt(hex.slice(w * 8, w * 8 + 8), 16) >>> 0; });
+    $("hashStat").textContent = `Fingerprints: ${ids.length.toLocaleString()} cards`;
+  } catch (e) { db.hashes = null; $("hashStat").textContent = "Fingerprints: none (Claude reads every card)"; }
+}
+function dbCard(i) {
+  const c = db.cards[i], o = db.oracle[c[14]] || [];
+  return { id: c[0], name: c[1], set: c[2], set_name: db.sets[c[2]] || c[2].toUpperCase(), collector_number: c[3], rarity: RARITY[c[4]] || c[4], lang: c[5],
+    prices: { usd: c[6], usd_foil: c[7], usd_etched: c[8], eur: c[9], eur_foil: c[10] }, variant: c[11] || "", artist: c[12] || "", released_at: c[13] || "",
+    finishes: c[15] || "", scryfall_uri: `https://scryfall.com/card/${c[2]}/${encodeURIComponent(c[3])}`, image: imageUrl(c[0]),
+    type_line: o[1] || "", mana_cost: o[2] || "", cmc: o[3], colors: (o[4] || "").split("").filter(Boolean), oracle_text: o[5] || "", layout: o[6] || "" };
+}
+function bigrams(s) { s = (s || "").toLowerCase(); const out = []; for (let i = 0; i < s.length - 1; i++) out.push(s.slice(i, i + 2)); return out; }
+function sim(a, b) { const A = bigrams(a), B = bigrams(b); if (!A.length || !B.length) return 0; const m = new Map(); A.forEach(x => m.set(x, (m.get(x) || 0) + 1)); let hit = 0; B.forEach(x => { const c = m.get(x); if (c) { hit++; m.set(x, c - 1); } }); return 2 * hit / (A.length + B.length); }
+function localName(read) {                 // canonical lowercase name in the DB for a (possibly misread) name
+  const q = (read || "").toLowerCase().trim(); if (!q) return null;
+  if (db.byName.has(q)) return q;
+  let best = null, bs = 0;
+  for (const n of db.names) { if (Math.abs(n.length - q.length) > 6) continue; const s = sim(q, n); if (s > bs) { bs = s; best = n; } }
+  return bs >= 0.6 ? best : null;
+}
+const priceSort = (a, b) => (a.prices.usd == null ? 1e9 : a.prices.usd) - (b.prices.usd == null ? 1e9 : b.prices.usd);
+function localPrints(name, set, lang) {
+  const n = localName(name); if (!n) return [];
+  return db.byName.get(n).map(dbCard).filter(c => (!set || c.set === set) && (!lang || c.lang === lang)).sort(priceSort);
+}
+function popcnt(x) { x = x - ((x >>> 1) & 0x55555555); x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return (((x + (x >>> 4)) & 0x0F0F0F0F) * 0x01010101) >>> 24; }
+function hexToWords(hex) { const w = new Uint32Array(16); for (let i = 0; i < 16; i++) w[i] = parseInt(hex.slice(i * 8, i * 8 + 8), 16) >>> 0; return w; }
+function nearestHash(hex) {                // -> {id, dist, second} over fingerprint DB + learned cache
+  const q = hexToWords(hex); let best = { id: null, dist: 999, second: 999 };
+  const consider = (id, words, off) => { let d = 0; for (let w = 0; w < 16; w++) { d += popcnt(q[w] ^ words[off + w]); if (d >= best.second) return; }
+    if (d < best.dist) { best = { id, dist: d, second: best.dist }; } else if (d < best.second) best.second = d; };
+  if (db.hashes) for (let k = 0; k < db.hashIds.length; k++) consider(db.hashIds[k], db.hashes, k * 16);
+  for (const [h, id] of Object.entries(learned)) consider(id, hexToWords(h), 0);
+  return best;
+}
+const HASH_ACCEPT = 115, HASH_MARGIN = 20;
+let learned = JSON.parse(localStorage.getItem(LEARNED_KEY) || "{}");
+function learn(hex, id) { if (!hex || !id) return; learned[hex] = id; const ks = Object.keys(learned); if (ks.length > 4000) delete learned[ks[0]]; localStorage.setItem(LEARNED_KEY, JSON.stringify(learned)); }
+const hashKnown = hex => { const m = nearestHash(hex); return (m.id && m.dist <= HASH_ACCEPT && (m.second - m.dist) >= HASH_MARGIN) ? m : null; };
+
+/* 512-bit card fingerprint of a 700x977 crop canvas. Must match card_hash_from_image() in build_db.py. */
+function hashCard(canvas) {
+  const W = canvas.width, H = canvas.height, d = canvas.getContext("2d").getImageData(0, 0, W, H).data;
+  const cells = (nx, ny) => { const out = new Float64Array(nx * ny); const xs = [], ys = [];
+    for (let i = 0; i <= nx; i++) xs.push(Math.floor(i * W / nx)); for (let j = 0; j <= ny; j++) ys.push(Math.floor(j * H / ny));
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { let s = 0, n = 0;
+      for (let y = ys[j]; y < ys[j + 1]; y++) { let p = (y * W + xs[i]) * 4; for (let x = xs[i]; x < xs[i + 1]; x++, p += 4) { s += 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]; n++; } }
+      out[j * nx + i] = s / n; } return out; };
+  const h = cells(17, 16), v = cells(16, 17), bits = [];
+  for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++) bits.push(h[j * 17 + i + 1] > h[j * 17 + i] ? 1 : 0);
+  for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++) bits.push(v[(j + 1) * 16 + i] > v[j * 16 + i] ? 1 : 0);
+  let hex = ""; for (let k = 0; k < 512; k += 4) hex += (bits[k] * 8 + bits[k + 1] * 4 + bits[k + 2] * 2 + bits[k + 3]).toString(16);
+  return hex;
+}
+function hamming(a, b) { let d = 0; for (let i = 0; i < a.length; i += 8) d += popcnt((parseInt(a.slice(i, i + 8), 16) ^ parseInt(b.slice(i, i + 8), 16)) >>> 0); return d; }
+
+/* ================= Scryfall live fallback ================= */
+const sfCache = new Map(); let sfLast = 0;
+async function sf(path) {
+  if (sfCache.has(path)) return sfCache.get(path);
+  const wait = 110 - (Date.now() - sfLast); if (wait > 0) await sleep(wait);
+  sfLast = Date.now(); let out = null;
+  try { const r = await fetch("https://api.scryfall.com" + path, { headers: { Accept: "application/json" } }); if (r.ok) out = await r.json(); } catch (e) { out = null; }
+  sfCache.set(path, out); return out;
+}
+function variantOf(c) {
+  const v = [], fe = new Set(c.frame_effects || []);
+  if (c.frame === "1997") v.push("retro"); if (fe.has("showcase")) v.push("showcase"); if (fe.has("extendedart")) v.push("extended art");
+  if (c.border_color === "borderless") v.push("borderless"); if (c.full_art) v.push("full art"); if (fe.has("etched")) v.push("etched"); if (c.promo) v.push("promo");
+  (c.promo_types || []).forEach(p => v.push(p)); if (c.layout === "token" || c.set_type === "token") v.push("token"); if (c.lang && c.lang !== "en") v.push(c.lang);
+  return v.join(",");
+}
+const num = v => (v == null || v === "") ? null : parseFloat(v);
+function fromApi(c) {                       // Scryfall API object -> the card shape used everywhere
+  if (!c) return null; const face = (c.card_faces && c.card_faces[0]) || c;
+  return { id: c.id, name: c.name, set: c.set, set_name: c.set_name, collector_number: c.collector_number, rarity: c.rarity, lang: c.lang || "en",
+    prices: { usd: num(c.prices && c.prices.usd), usd_foil: num(c.prices && c.prices.usd_foil), usd_etched: num(c.prices && c.prices.usd_etched), eur: num(c.prices && c.prices.eur), eur_foil: num(c.prices && c.prices.eur_foil) },
+    variant: variantOf(c), artist: c.artist || "", released_at: c.released_at || "", finishes: (c.finishes || []).map(f => f[0]).join(""),
+    scryfall_uri: c.scryfall_uri, image: (c.image_uris && c.image_uris.normal) || (face.image_uris && face.image_uris.normal) || imageUrl(c.id),
+    type_line: face.type_line || c.type_line || "", mana_cost: face.mana_cost || c.mana_cost || "", cmc: c.cmc, colors: face.colors || c.colors || [],
+    oracle_text: face.oracle_text || c.oracle_text || "", layout: c.layout || "" };
+}
+function normNumber(n) { if (!n) return null; let s = String(n).split("/")[0].trim().replace(/[^0-9A-Za-z★†]/g, ""); const m = s.match(/^0*(\d+)(.*)$/); return m ? m[1] + m[2] : (s || null); }
+function nameMatch(read, card) { const names = [card.name, ...(card.name || "").split("//").map(s => s.trim())]; return Math.max(...names.filter(Boolean).map(n => sim(read, n))); }
+
+async function cardById(id) {
+  if (db.loaded && db.byId.has(id)) return dbCard(db.byId.get(id));
+  return fromApi(await sf(`/cards/${id}`));
+}
+/* vision reading -> exact printing. Local DB first, Scryfall API otherwise. Returns [card, reviewReason]. */
+async function resolve(rd) {
+  const read = (rd.name || "").trim(), set = (rd.set_code || "").trim().toLowerCase() || null, numb = normNumber(rd.collector_number), lang = (rd.language || "en").toLowerCase();
+  if (db.loaded) {
+    if (set && numb) { const i = db.byKey.get(lang === "en" ? `${set}/${numb}` : `${set}/${numb}/${lang}`); if (i != null) { const c = dbCard(i); if (nameMatch(read, c) >= 0.7) return [c, ""]; } }
+    if (!read) return [null, "no name read"];
+    let prints = localPrints(read, set, lang), scoped = !!set;
+    if (!prints.length && set) { prints = localPrints(read, null, lang); scoped = false; }
+    if (!prints.length && lang !== "en") prints = localPrints(read, null, null);
+    if (!prints.length) return [null, "no match in database"];
+    const pick = prints[0];
+    if (prints.length === 1) return [pick, (set && !scoped) ? "set code did not match — check" : ""];
+    return [pick, `${prints.length} printings${scoped ? " in " + set.toUpperCase() : ""} — cheapest assumed, tap to pick`];
+  }
+  if (set && numb) { const c = fromApi(await sf(`/cards/${set}/${numb}` + (lang !== "en" ? `/${lang}` : ""))); if (c && nameMatch(read, c) >= 0.7) return [c, ""]; }
+  if (!read) return [null, "no name read"];
+  let canon = null;
+  for (const p of [set ? `/cards/named?fuzzy=${encodeURIComponent(read)}&set=${set}` : null, `/cards/named?fuzzy=${encodeURIComponent(read)}`]) { if (!p) continue; const c = await sf(p); if (c && nameMatch(read, fromApi(c)) >= 0.6) { canon = c; break; } }
+  if (!canon) return [null, "no Scryfall match"];
+  const langQ = lang !== "en" ? ` lang:${lang}` : ""; let prints = null, scoped = false;
+  if (set) { const s = await sf(`/cards/search?q=${encodeURIComponent(`!"${canon.name}" set:${set}${langQ}`)}&unique=prints&order=usd&dir=asc`); if (s && s.data && s.data.length) { prints = s.data.map(fromApi); scoped = true; } }
+  if (!prints) { const s = await sf(`/cards/search?q=${encodeURIComponent(`!"${canon.name}"${langQ}`)}&unique=prints&order=usd&dir=asc`); if (s && s.data && s.data.length) prints = s.data.map(fromApi); }
+  if (!prints) return [fromApi(canon), "printing not verified"];
+  if (prints.length === 1) return [prints[0], (set && !scoped) ? "set code did not match — check" : ""];
+  return [prints[0], `${prints.length} printings${scoped ? " in " + set.toUpperCase() : ""} — cheapest assumed, tap to pick`];
+}
+async function printsOf(name) {
+  if (db.loaded) return localPrints(name, null, null);
+  const j = await sf(`/cards/search?q=${encodeURIComponent('!"' + name + '"')}&unique=prints&order=released`); return ((j && j.data) || []).map(fromApi);
+}
+async function nameSuggestions(q) {
+  if (db.loaded) { const ql = q.toLowerCase(); const out = []; for (const n of db.names) { if (n.startsWith(ql)) { out.push(n); if (out.length >= 12) break; } }
+    if (out.length < 12) for (const n of db.names) { if (!n.startsWith(ql) && n.includes(ql)) { out.push(n); if (out.length >= 12) break; } }
+    return out.map(n => db.cards[db.byName.get(n)[0]][1]); }
+  const j = await sf(`/cards/autocomplete?q=${encodeURIComponent(q)}`); return (j && j.data) || [];
+}
+
+/* ================= Claude ================= */
+const PROMPT_FIELDS = `For every crop, in order, report:
+- index: the crop number
+- name: the card name exactly as printed. For double-faced, adventure or split cards give only the FRONT / creature-side name. For tokens give the token name and put "token" in notes. If the crop is not a card, use null and notes "not a card".
+- set_code: the 3-5 letter set code printed on the bottom-left line (e.g. "MH3", "CLB", "STX"), or null if unreadable.
+- collector_number: the number printed next to the rarity letter on that bottom line, as printed (e.g. "0007", "310", "187/331"), or null.
+- rarity_letter: the letter on that line if readable (C, U, R, M, L, T), else null.
+- foil: true if the card shows a rainbow/holographic sheen, false if clearly not, "unknown" if unsure.
+- language: two-letter code, "en" unless the text is visibly another language.
+- frame: "normal", "retro", "showcase", "borderless", "extended", or "other".
+- confidence: "high", "medium" or "low" for the identification of the name.
+- notes: anything useful (token, non-English, damaged, art card, substitute card, etc.), else "".
+Do NOT guess a collector number or set code you cannot actually read; use null instead.
+Answer with ONLY a JSON array (no prose, no code fences).`;
+const PROMPT_CROPS = `You are cataloguing Magic: The Gathering cards. Images 1..N are crops, one card each (a crop may be rotated, slightly blurry, or occasionally not a card at all). The LAST image is the whole photo the crops came from.
+` + PROMPT_FIELDS.replace("Answer with ONLY", `Then look at the whole photo: if it contains cards that are NOT among the crops (compare by name), add one entry per missing card with the same fields, "extra": true, and index continuing after the last crop. Do not duplicate a card that already has a crop.
+Answer with ONLY`);
+const PROMPT_SINGLE = `You are cataloguing Magic: The Gathering cards. Each image is one card photographed by a phone camera (may be slightly blurry, tilted, or partly covered by a finger).
+` + PROMPT_FIELDS;
+const PROMPT_WHOLE = `This photo shows several Magic: The Gathering cards laid on a table (they may be sideways).
+List EVERY card visible, reading left to right, top to bottom, with index starting at 1 and these fields:
+name (front/creature side only for double-faced/adventure cards; tokens noted in notes), set_code (bottom-left code, or null if unreadable), collector_number (or null), rarity_letter (or null), foil (true/false/"unknown"), language, frame, confidence, notes.
+Do NOT guess a collector number or set code you cannot actually read.
+Answer with ONLY a JSON array (no prose, no code fences).`;
+async function askClaude(cropsB64, wholeB64) {
+  if (!settings.apiKey) throw new Error("no API key — add one in Settings, or build fingerprints for your sets");
+  const content = [];
+  if (cropsB64 && cropsB64.length) {
+    content.push({ type: "text", text: wholeB64 ? PROMPT_CROPS : PROMPT_SINGLE });
+    cropsB64.forEach((b, i) => { content.push({ type: "text", text: `Crop ${i + 1}:` }); content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: b } }); });
+    if (wholeB64) content.push({ type: "text", text: "Whole photo:" });
+  } else content.push({ type: "text", text: PROMPT_WHOLE });
+  if (wholeB64) content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: wholeB64 } });
+  const body = JSON.stringify({ model: settings.model, max_tokens: 4000, messages: [{ role: "user", content }] });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", body,
+      headers: { "content-type": "application/json", "x-api-key": settings.apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" } });
+    if ((r.status === 529 || r.status === 429) && attempt === 0) { await sleep(4000); continue; }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const msg = (j.error && j.error.message) || r.statusText;
+      if (r.status === 401) throw new Error("API key rejected — check it in Settings");
+      if (r.status === 404) throw new Error(`model "${settings.model}" not found — change it in Settings`);
+      throw new Error(`Claude API ${r.status}: ${msg}`); }
+    const text = (j.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+    const a = text.indexOf("["), z = text.lastIndexOf("]"); if (a < 0 || z < 0) throw new Error("the model did not return a card list");
+    const cards = JSON.parse(text.slice(a, z + 1)); cards.forEach((c, i) => { if (c.index == null) c.index = i + 1; }); return cards;
+  }
+  throw new Error("Claude API is busy — try again in a minute");
+}
+
+/* ================= rows ================= */
+const COLOR_NAMES = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green" };
+const TYPE_ORDER = ["Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment", "Land", "Token"];
+function categorize(card) {
+  const typeLine = card.type_line || "", type = TYPE_ORDER.find(t => typeLine.includes(t)) || (typeLine.split("—")[0].trim() || "Other");
+  const order = "WUBRG".split(""), cs = (card.colors || []).slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const color = type === "Land" && !cs.length ? "Land" : !cs.length ? "Colorless" : cs.length === 1 ? COLOR_NAMES[cs[0]] : `Multicolor (${cs.join("")})`;
+  return { colors: cs.join(""), color, type, mv: card.cmc != null ? card.cmc : "" };
+}
+function priceOf(card, foil) {
+  const p = (card && card.prices) || {}; const f = foil ? "usd_foil" : "usd";
+  if (p[f] != null) return [p[f], f]; const alt = foil ? "usd" : "usd_foil";
+  if (p[alt] != null) return [p[alt], alt]; if (p.usd_etched != null) return [p.usd_etched, "usd_etched"]; return [null, f];
+}
+function rowFromCard(row, card, foil) {
+  const [price, field] = card ? priceOf(card, foil) : [null, ""];
+  Object.assign(row, {
+    name: card ? card.name : row.name_read, set: card ? card.set.toUpperCase() : (row.set || ""), set_name: card ? card.set_name : "",
+    number: card ? card.collector_number : (row.number || ""), rarity: card ? card.rarity : "", foil: !!foil, price, price_field: field,
+    eur: card ? (foil && card.prices.eur_foil != null ? card.prices.eur_foil : card.prices.eur) : null,
+    uri: card ? card.scryfall_uri : "", scryfall_id: card ? card.id : "", image: card ? card.image : "", variant: card ? card.variant : "",
+    artist: card ? card.artist : "", released: card ? card.released_at : "", lang: card ? card.lang : "", oracle_text: card ? card.oracle_text : "",
+    type_line: card ? card.type_line : "", mana_cost: card ? card.mana_cost : ""
+  }, card ? categorize(card) : { colors: "", color: "Unknown", type: "Unknown", mv: "" });
+  if (row.price_at_scan == null && price != null) row.price_at_scan = price;
+  row.cond = row.cond || "NM";
+  return row;
+}
+async function buildRow(rd, foilBatch, photo, listName, extra) {
+  const [card, reason] = await resolve(rd);
+  const foil = foilBatch || rd.foil === true;
+  const row = rowFromCard(Object.assign({ id: newId(), ts: now(), photo, name_read: rd.name, notes: [rd.notes, (rd.frame && rd.frame !== "normal") ? rd.frame : ""].filter(Boolean).join("; "),
+    review: [reason, (rd.confidence || "").toLowerCase() === "low" ? "low confidence" : "", rd.extra ? "not auto-detected; found in whole photo" : ""].filter(Boolean).join("; ") }, extra || {}), card, foil);
+  row.list = (settings.autoList && flagged(row)) ? settings.autoList : listName;
+  if (card && rd.set_code && rd.collector_number && row.hash && !reason) learn(row.hash, card.id);   // exact read -> remember its fingerprint
+  return row;
+}
+function knownRow(m, hash, opts) {
+  return cardById(m.id).then(card => { if (!card) return null;
+    const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: card.name, notes: "", review: "", hash, via: "fingerprint" }, card, opts.foil);
+    row.list = (settings.autoList && flagged(row)) ? settings.autoList : opts.list; return row; });
+}
+/* One crop -> row. Fingerprints (offline, instant) first, Claude only if needed. */
+async function identifyCrop(cropCanvas, opts) {
+  const hash = hashCard(cropCanvas), m = hashKnown(hash);
+  if (m) { const row = await knownRow(m, hash, opts); if (row) return row; }
+  const readings = (await askClaude([canvasToB64(cropCanvas)], null)).filter(r => r && r.name);
+  if (!readings.length) throw new Error("no card seen");
+  return buildRow(readings[0], opts.foil, opts.photo, opts.list, { hash, via: "claude" });
+}
+
+/* ================= image helpers, OpenCV ================= */
+let cvReady = null;
+function loadCv() {
+  if (cvReady) return cvReady;
+  cvReady = new Promise((resolve, reject) => {
+    const urls = ["https://docs.opencv.org/4.x/opencv.js", "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js"];
+    const tryLoad = i => { if (i >= urls.length) return reject(new Error("could not load the vision library. Check the connection and retry."));
+      const s = document.createElement("script"); s.src = urls[i]; s.async = true; s.onerror = () => tryLoad(i + 1);
+      s.onload = () => { const c = window.cv; if (c && c.Mat) return resolve(c); if (c && typeof c.then === "function") return c.then(resolve, () => tryLoad(i + 1)); if (c) c.onRuntimeInitialized = () => resolve(window.cv); else tryLoad(i + 1); };
+      document.head.appendChild(s); };
+    tryLoad(0);
+  });
+  return cvReady;
+}
+async function fileToCanvas(file, maxSide) {
+  let img; try { img = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch (e) { img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error("could not read that photo")); im.src = URL.createObjectURL(file); }); }
+  const w = img.width, h = img.height, s = Math.min(1, maxSide / Math.max(w, h)); const c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); if (img.close) img.close(); return c;
+}
+function canvasToB64(c, q) { return c.toDataURL("image/jpeg", q || 0.88).split(",")[1]; }
+function matToCanvas(cv, mat) { const c = document.createElement("canvas"); cv.imshow(c, mat); return c; }
+function scaledCanvas(src, maxSide) { const s = Math.min(1, maxSide / Math.max(src.width, src.height)); if (s === 1) return src; const c = document.createElement("canvas"); c.width = Math.round(src.width * s); c.height = Math.round(src.height * s); c.getContext("2d").drawImage(src, 0, 0, c.width, c.height); return c; }
+function sharpness(ctx, x, y, w, h) {       // variance of a Laplacian on a small grey copy of a region
+  if (!(w > 2 && h > 2)) return 0;
+  const t = document.createElement("canvas"); const s = Math.min(1, 160 / Math.max(w, h)); t.width = Math.max(8, Math.round(w * s)); t.height = Math.max(8, Math.round(h * s));
+  t.getContext("2d").drawImage(ctx.canvas, x, y, w, h, 0, 0, t.width, t.height);
+  const d = t.getContext("2d").getImageData(0, 0, t.width, t.height).data, W = t.width, H = t.height, g = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  let s2 = 0, n = 0; for (let y2 = 1; y2 < H - 1; y2++) for (let x2 = 1; x2 < W - 1; x2++) { const i = y2 * W + x2; const l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - W] - g[i + W]; s2 += l * l; n++; }
+  return n ? s2 / n : 0;
+}
+function describeCard(cropCanvas) {         // rough colour words for an unread card, from the frame (not the art)
+  const ctx = cropCanvas.getContext("2d"), W = cropCanvas.width, H = cropCanvas.height;
+  const strips = [[0.06, 0.03, 0.88, 0.05], [0.05, 0.62, 0.05, 0.28], [0.90, 0.62, 0.05, 0.28]].map(([x, y, w, h]) => ctx.getImageData(Math.round(x * W), Math.round(y * H), Math.max(1, Math.round(w * W)), Math.max(1, Math.round(h * H))).data);
+  let r = 0, g = 0, b = 0, n = 0; strips.forEach(d => { for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; } }); r /= n; g /= n; b /= n;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2 / 255, sat = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * l - 1)) / 255;
+  let hue = 0; if (mx !== mn) { hue = mx === r ? ((g - b) / (mx - mn)) % 6 : mx === g ? (b - r) / (mx - mn) + 2 : (r - g) / (mx - mn) + 4; hue = (hue * 60 + 360) % 360; }
+  if (sat < 0.12) return l > 0.75 ? "white" : l > 0.45 ? "gray, maybe an artifact" : "black";
+  if (hue >= 200 && hue < 260) return "blue"; if (hue >= 75 && hue < 170) return "green"; if (hue >= 330 || hue < 15) return "red";
+  if (hue >= 35 && hue < 65 && l > 0.45) return "gold, maybe multicolor"; if (hue >= 15 && hue < 45) return l > 0.6 ? "tan, maybe a land" : "brown"; return "purple-ish";
+}
+function positionWords(nx, ny) { const v = ny < 0.33 ? "top" : ny > 0.66 ? "bottom" : "", h = nx < 0.33 ? "left" : nx > 0.66 ? "right" : ""; return (v && h) ? `${v} ${h}` : v || h || "middle"; }
+
+/* ================= sound & voice ================= */
+const audio = { ctx: null };
+function beep(freq, ms, when) {
+  try { const a = audio.ctx; if (!a) return; const o = a.createOscillator(), g = a.createGain(); o.frequency.value = freq; o.connect(g); g.connect(a.destination);
+    const t = a.currentTime + (when || 0); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + (ms || 90) / 1000); o.start(t); o.stop(t + (ms || 90) / 1000 + 0.02); } catch (e) {}
+}
+function vib(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+const sound = { lock: () => { beep(880, 80); vib(30); }, ok: () => beep(1320, 70), hit: () => { beep(1320, 80); beep(1760, 140, 0.09); vib([40, 40, 80]); }, bad: () => { beep(220, 160); beep(220, 220, 0.2); vib([80, 60, 80]); } };
+function speak(text, important) {
+  if (settings.voice === "off" || !("speechSynthesis" in window)) return;
+  if (settings.voice === "hits" && !important) return;
+  try { if (important && speechSynthesis.speaking) speechSynthesis.cancel(); else if (speechSynthesis.speaking && !important) return;
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.1; speechSynthesis.speak(u); } catch (e) {}
+}
+const dollars = p => p == null ? "no price" : p >= 1 ? `${Math.floor(p)} ${Math.floor(p) === 1 ? "dollar" : "dollars"}${Math.round((p % 1) * 100) ? ` ${Math.round((p % 1) * 100)}` : ""}` : `${Math.round(p * 100)} cents`;
+
+/* ================= photo scanning ================= */
+const filesEl = $("files"), goBtn = $("go"), statusEl = $("status"), fileLabel = $("fileLabel"), drop = $("drop");
+filesEl.onchange = () => { const n = filesEl.files.length; goBtn.disabled = !n; fileLabel.textContent = n ? `${n} photo${n > 1 ? "s" : ""} ready` : "…or photos of 8–16 cards each"; drop.classList.toggle("has", !!n); };
+function setStatus(msg, err) { statusEl.textContent = msg; statusEl.classList.toggle("err", !!err); statusEl.classList.toggle("busy", !err && /…$/.test(msg)); }
+goBtn.onclick = async () => {
+  goBtn.disabled = true;
+  const foilBatch = $("foil").checked, files = Array.from(filesEl.files), scanRows = [], scanList = currentList();
+  settings.lastList = scanList; saveSettings();
+  try {
+    setStatus("Loading vision library (first time only, ~10 MB)…");
+    const cv = await loadCv(); const det = makeDetector(cv);
+    for (let fi = 0; fi < files.length; fi++) {
+      const file = files[fi], tag = files.length > 1 ? ` (photo ${fi + 1}/${files.length})` : "", photo = file.name || `photo ${fi + 1}`;
+      setStatus(`Finding cards${tag}…`);
+      const canvas = await fileToCanvas(file, 3200); const mat = cv.imread(canvas);
+      let quads = []; try { quads = det.detectCards(mat); } catch (e) { console.warn("detect failed", e); }
+      const crops = quads.map(q => { const m = det.warpCard(mat, q); const c = matToCanvas(cv, m); m.delete(); return c; });
+      mat.delete();
+      const unknown = [];                                    // fingerprints first: known cards skip the API entirely
+      for (const c of crops) {
+        const hash = hashCard(c), m = hashKnown(hash);
+        if (m) { const row = await knownRow(m, hash, { photo, foil: foilBatch, list: scanList }); if (row) { scanRows.push(row); continue; } }
+        unknown.push({ c, hash });
+      }
+      if (unknown.length || crops.length < 2) {
+        const whole = canvasToB64(scaledCanvas(canvas, 1568), 0.85);
+        setStatus(`Reading ${unknown.length >= 2 ? unknown.length + " cards" : "the photo"}${tag}…`);
+        let readings = await askClaude(unknown.length >= 2 ? unknown.map(u => canvasToB64(u.c)) : null, whole);
+        readings = readings.filter(r => r && r.name);
+        setStatus(`Pricing${tag}…`);
+        for (const rd of readings) { const u = unknown.length >= 2 ? unknown[(rd.index || 0) - 1] : null; scanRows.push(await buildRow(rd, foilBatch, photo, scanList, u && !rd.extra ? { hash: u.hash, via: "claude" } : { via: "claude" })); }
+      }
+    }
+    inventory.push(...scanRows); saveInv(); refreshListSelects(); renderScan(scanRows); renderInvTotals();
+    const moved = settings.autoList ? scanRows.filter(r => r.list === settings.autoList && settings.autoList !== scanList).length : 0;
+    setStatus(`${scanRows.length} cards read from ${files.length} photo${files.length > 1 ? "s" : ""} → "${scanList}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}.`);
+    filesEl.value = ""; fileLabel.textContent = "…or photos of 8–16 cards each"; drop.classList.remove("has");
+  } catch (e) { console.error(e); setStatus("Scan failed: " + (e.message || e), true); goBtn.disabled = false; }
+};
+
+/* ================= live scanner (one at a time / sweep) ================= */
+const live = { on: false, paused: false, stream: null, track: null, caps: {}, cv: null, det: null, tracker: null, items: [], listName: "Unsorted", lastQuad: null, torch: false, raf: 0, lastT: 0,
+               mode: settings.mode || "single", tracks: [], nextTrack: 1, recent: [], retry: null, busy: 0 };
+const video = $("liveVideo"), overlay = $("liveOverlay"), grab = document.createElement("canvas"), full = document.createElement("canvas");
+function setHint(t) { $("liveHint").textContent = t; }
+function setMode(m) { live.mode = m; settings.mode = m; saveSettings(); $("modeSingle").classList.toggle("on", m === "single"); $("modeSweep").classList.toggle("on", m === "sweep"); live.tracks = []; if (live.tracker) live.tracker.reset();
+  setHint(m === "sweep" ? "Move slowly over the cards. Each one is read as it comes into focus." : "Lay a card on a plain light surface and point at it — it scans when steady. Tap to force."); }
+$("modeSingle").onclick = () => setMode("single"); $("modeSweep").onclick = () => setMode("sweep");
+$("btnLive").onclick = startLive;
+async function startLive() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setStatus("Live scan needs camera access, which needs the app opened over https (GitHub Pages is fine).", true); return; }
+  try { audio.ctx = audio.ctx || new (window.AudioContext || window.webkitAudioContext)(); audio.ctx.resume(); } catch (e) {}
+  try { if ("speechSynthesis" in window) speechSynthesis.getVoices(); } catch (e) {}
+  live.listName = currentList(); settings.lastList = live.listName; saveSettings();
+  $("liveList").textContent = live.listName; $("liveCount").textContent = "0"; $("liveLast").innerHTML = ""; $("liveFoil").checked = $("foil").checked;
+  live.items = []; live.tracks = []; live.recent = []; live.retry = null; live.paused = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden");
+  $("live").classList.remove("hidden"); setHint("Starting camera…");
+  try {
+    setHint("Loading vision library…");
+    live.cv = await loadCv(); live.det = makeDetector(live.cv); live.tracker = new live.det.LiveTracker({ lockFrames: 4, clearFrames: 5, iou: 0.8 });
+    live.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 2160 } } });
+    video.srcObject = live.stream; await video.play();
+    live.track = live.stream.getVideoTracks()[0];
+    try { live.caps = live.track.getCapabilities ? live.track.getCapabilities() : {}; } catch (e) { live.caps = {}; }
+    $("liveTorch").classList.toggle("hidden", !live.caps.torch);
+    await applyCamera();
+    live.on = true; live.lastT = 0; setMode(live.mode);
+    live.raf = requestAnimationFrame(liveLoop);
+  } catch (e) {
+    stopLive(); setStatus(e && e.name === "NotAllowedError" ? "Camera permission denied — allow the camera for this site in your browser settings." : "Camera failed: " + (e.message || e), true);
+  }
+}
+function stopLive() {
+  live.on = false; cancelAnimationFrame(live.raf);
+  if (live.stream) { live.stream.getTracks().forEach(t => t.stop()); live.stream = null; }
+  video.srcObject = null; $("live").classList.add("hidden");
+  const rows = live.items.filter(i => i.row).map(i => i.row);
+  if (rows.length) { renderScan(rows); refreshListSelects(); renderInvTotals();
+    const unread = live.items.filter(i => i.status === "unread").length, moved = rows.filter(r => r.list !== live.listName).length;
+    setStatus(`${rows.length} cards scanned → "${live.listName}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unread ? `. ${unread} not read.` : "."}`); }
+}
+$("liveDone").onclick = stopLive;
+$("livePause").onclick = () => { live.paused = !live.paused; $("livePause").textContent = live.paused ? "Resume" : "Pause"; setHint(live.paused ? "Paused" : "Go on"); };
+$("liveTorch").onclick = async () => { try { live.torch = !live.torch; await live.track.applyConstraints({ advanced: [{ torch: live.torch }] }); } catch (e) { setHint("This phone does not allow the light here."); } };
+$("livePlus").onclick = () => {
+  const last = live.items.find(i => i.row); if (!last) { setHint("Nothing to duplicate yet."); return; }
+  const copy = Object.assign({}, last.row, { id: newId(), ts: now() }); inventory.push(copy); saveInv();
+  live.items.unshift({ row: copy, thumb: last.thumb, status: "done" }); renderLiveLast(); sound.ok(); updateCount();
+};
+function updateCount() { $("liveCount").textContent = String(live.items.filter(i => i.row).length); }
+video.addEventListener("click", () => { if (!live.on || live.paused) return; if (live.mode === "single" || live.retry) liveCapture(live.lastQuad || guideQuad(), null, live.retry); });
+overlay.addEventListener("click", () => video.click());
+function viewMap() { const vw = video.videoWidth, vh = video.videoHeight, cw = overlay.clientWidth, ch = overlay.clientHeight; const s = Math.max(cw / vw, ch / vh); return { s, ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2, vw, vh, cw, ch }; }
+function guideQuad() { const m = viewMap(); const h = 0.7 * m.ch / m.s, w = h * 63 / 88, cx = m.vw / 2, cy = m.vh / 2; return [{ x: cx - w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy + h / 2 }, { x: cx - w / 2, y: cy + h / 2 }]; }
+const trackColor = { pending: "rgba(255,255,255,.7)", reading: "rgba(255,255,255,.9)", ok: "#6fbf8a", hit: "#e0b64a", unread: "#ff5c5c", repeat: "#9aa3ad" };
+function drawOverlay(quad, state) {
+  const m = viewMap(), dpr = window.devicePixelRatio || 1;
+  if (overlay.width !== Math.round(m.cw * dpr) || overlay.height !== Math.round(m.ch * dpr)) { overlay.width = Math.round(m.cw * dpr); overlay.height = Math.round(m.ch * dpr); }
+  const g = overlay.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, m.cw, m.ch);
+  const P = q => q.map(p => ({ x: p.x * m.s + m.ox, y: p.y * m.s + m.oy }));
+  const poly = (q, color, width, dash) => { g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.beginPath(); q.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.stroke(); g.setLineDash([]); };
+  if (live.mode === "single" || live.retry) { poly(P(guideQuad()), "rgba(255,255,255,.25)", 1.5, [8, 8]);
+    if (quad) poly(P(quad), state === "held" ? "rgba(255,255,255,.5)" : state === "lock" ? "#e0b64a" : "#6fbf8a", state === "lock" ? 5 : 3); }
+  if (live.mode === "sweep") for (const t of live.tracks) { const q = P(t.quad); poly(q, trackColor[t.status] || "#fff", t.status === "pending" ? 2 : 3, t.status === "reading" ? [6, 6] : null);
+    const label = (t.status === "ok" || t.status === "hit" || t.status === "repeat") && t.item && t.item.row ? `${t.item.row.name}  ${money(t.item.row.price)}` : t.status === "unread" ? "?  not read" : "";
+    if (label) { const cx = q.reduce((s, p) => s + p.x, 0) / 4, cy = q.reduce((s, p) => s + p.y, 0) / 4; g.font = "600 13px system-ui"; const w = g.measureText(label).width + 12;
+      g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(cx - w / 2, cy - 11, w, 22); g.fillStyle = trackColor[t.status]; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(label, cx, cy); } }
+}
+function liveLoop(t) {
+  if (!live.on) return; live.raf = requestAnimationFrame(liveLoop);
+  if (live.paused || video.readyState < 2 || !video.videoWidth || t - live.lastT < (live.mode === "sweep" ? 150 : 110)) return;
+  live.lastT = t;
+  const vw = video.videoWidth, vh = video.videoHeight, s = Math.min(1, 640 / Math.max(vw, vh));
+  grab.width = Math.round(vw * s); grab.height = Math.round(vh * s);
+  const gctx = grab.getContext("2d"); gctx.drawImage(video, 0, 0, grab.width, grab.height);
+  if (!$("tune").classList.contains("hidden")) updateSharpMeter();
+  if (live.mode === "single" || live.retry) {
+    let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
+    if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
+    live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev);
+    if (ev === "lock") liveCapture(quad, null, live.retry);
+    else if (ev === "held") setHint("Got it — lift the card and place the next one");
+    else if (ev === "cleared") setHint(live.retry ? "Center the unread card and hold still" : "Next card");
+    else if (ev === "tracking") setHint("Hold still…");
+    return;
+  }
+  // sweep: many cards per frame, track them, capture each once when it is steady and sharp
+  let quads = []; try { const mat = live.cv.imread(grab); quads = live.det.detectCards(mat, { target: 640, minFrac: 0.012, maxFrac: 0.6 }); mat.delete(); } catch (e) { console.warn(e); }
+  const center = q => ({ x: q.reduce((a, p) => a + p.x, 0) / 4, y: q.reduce((a, p) => a + p.y, 0) / 4 });
+  const heights = quads.map(q => Math.max(...q.map(p => p.y)) - Math.min(...q.map(p => p.y))).sort((a, b) => a - b), medH = heights.length ? heights[Math.floor(heights.length / 2)] : 100;
+  for (const q of quads) {
+    const c = center(q); let tr = null, bd = 0.6 * medH;
+    for (const x of live.tracks) { const d = Math.hypot(x.cx - c.x, x.cy - c.y); if (d < bd) { bd = d; tr = x; } }
+    if (!tr) { tr = { id: live.nextTrack++, seen: 0, status: "pending", sharp: [], captured: false }; live.tracks.push(tr); }
+    tr.quad = q.map(p => ({ x: p.x / s, y: p.y / s })); tr.cx = c.x; tr.cy = c.y; tr.seen++; tr.last = t;
+    if (!tr.captured) {
+      const xs = q.map(p => p.x), ys = q.map(p => p.y), x0 = Math.max(0, Math.min(...xs)), y0 = Math.max(0, Math.min(...ys));
+      const sh = sharpness(gctx, x0, y0, Math.min(grab.width - x0, Math.max(...xs) - x0), Math.min(grab.height - y0, Math.max(...ys) - y0));
+      tr.sharp.push(sh); if (tr.sharp.length > 8) tr.sharp.shift();
+      const mx = Math.max(...tr.sharp);
+      if (tr.seen >= 3 && tr.sharp.length >= 3 && sh >= 0.85 * mx && sh > 4 && live.busy < 3) { tr.captured = true; tr.status = "reading"; liveCapture(tr.quad, tr, null); }
+    }
+  }
+  live.tracks = live.tracks.filter(x => t - x.last < 1200);
+  drawOverlay(null, null);
+}
+async function liveCapture(quad, track, retryItem) {
+  if (!quad || !live.on) return;
+  if (!track) { sound.lock(); live.tracker.state = "cooldown"; }
+  const cv = live.cv, det = live.det;
+  full.width = video.videoWidth; full.height = video.videoHeight; full.getContext("2d").drawImage(video, 0, 0);
+  let crop, thumb, hash;
+  try { const mat = cv.imread(full); const m = det.warpCard(mat, quad); crop = matToCanvas(cv, m); m.delete(); mat.delete(); thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7); hash = hashCard(crop); }
+  catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } return; }
+  const rep = live.recent.find(r => Date.now() - r.t < 15000 && hamming(r.hash, hash) <= 60);   // same card seen seconds ago (sweep re-entry)
+  live.recent.push({ hash, t: Date.now() }); if (live.recent.length > 40) live.recent.shift();
+  const item = retryItem || { status: "reading", thumb }; if (retryItem) { retryItem.status = "reading"; retryItem.thumb = thumb; } else live.items.unshift(item);
+  if (track) track.item = item; renderLiveLast();
+  const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
+  if (!track) setHint("Reading… place the next card");
+  live.busy++;
+  try {
+    const row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName });
+    if (rep && track) row.review = [row.review, "possible repeat of a card scanned seconds ago"].filter(Boolean).join("; ");
+    inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null;
+    if (track) track.status = flagged(row) ? "hit" : (rep ? "repeat" : "ok");
+    if (flagged(row)) { sound.hit(); speak(`${row.name}, ${dollars(row.price)}${live.mode === "sweep" ? `, ${pos}` : ""}`, true); }
+    else { sound.ok(); speak(`${row.name}, ${dollars(row.price)}`, false); }
+    if (retryItem) live.retry = null;
+    updateCount();
+  } catch (e) {
+    item.status = "unread"; item.error = e.message || String(e); item.desc = describeCard(crop); item.pos = pos;
+    if (track) track.status = "unread";
+    sound.bad(); speak(`Couldn't read a card. Looks ${item.desc}, ${pos}. Hold still on it to retry.`, true);
+    if (!track && !live.retry) setHint("Not read — tap its row to retry");
+  } finally { live.busy--; }
+  renderLiveLast();
+}
+function renderLiveLast() {
+  $("liveLast").innerHTML = live.items.slice(0, 3).map(i => {
+    const k = live.items.indexOf(i);
+    if (i.status === "reading") return `<div class="li reading"><img src="${i.thumb}" alt=""><div><div class="n">Reading…</div></div><div></div></div>`;
+    if (i.status === "unread") return `<div class="li unread" data-k="${k}"><img src="${i.thumb}" alt=""><div><div class="n">Not read — ${esc(i.desc || "")}, ${esc(i.pos || "")}</div><div class="sub">${esc(i.error)} · tap to retry</div></div><div></div></div>`;
+    const r = i.row; return `<div class="li"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? " · instant" : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
+  }).join("");
+}
+$("liveLast").addEventListener("click", e => { const el = e.target.closest(".li.unread"); if (!el) return; live.retry = live.items[+el.dataset.k]; live.tracker.reset(); setHint("Center that card and hold still — it will retry"); });
+
+/* ---- camera tuning: lock focus/exposure so the camera stops hunting ---- */
+async function applyCamera() {
+  const t = settings.camera || {}, adv = {};
+  if (t.focusDistance != null && live.caps.focusDistance) { adv.focusMode = "manual"; adv.focusDistance = t.focusDistance; }
+  else if (live.caps.focusMode && live.caps.focusMode.includes("continuous")) adv.focusMode = "continuous";
+  if (t.exposureCompensation != null && live.caps.exposureCompensation) adv.exposureCompensation = t.exposureCompensation;
+  if (t.zoom != null && live.caps.zoom) adv.zoom = t.zoom;
+  if (Object.keys(adv).length) { try { await live.track.applyConstraints({ advanced: [adv] }); } catch (e) { console.warn("camera constraints", e); } }
+}
+function measureSharp() { const w = grab.width, h = grab.height; return sharpness(grab.getContext("2d"), Math.round(w * 0.3), Math.round(h * 0.3), Math.round(w * 0.4), Math.round(h * 0.4)); }
+let sharpMax = 1;
+function updateSharpMeter() { const v = measureSharp(); sharpMax = Math.max(sharpMax * 0.995, v, 1); $("sharpVal").textContent = v.toFixed(0); $("sharpBar").style.width = Math.min(100, 100 * v / sharpMax) + "%"; }
+$("liveTune").onclick = () => { const p = $("tune"); p.classList.toggle("hidden"); if (!p.classList.contains("hidden")) buildTune(); };
+$("tuneClose").onclick = () => $("tune").classList.add("hidden");
+function buildTune() {
+  const c = live.caps, box = $("tuneControls"); box.innerHTML = "";
+  const slider = (key, label, cap, step) => {
+    if (!cap || cap.min == null) return;
+    let cur = settings.camera[key]; if (cur == null) { try { cur = live.track.getSettings()[key]; } catch (e) {} } if (cur == null) cur = cap.min;
+    box.insertAdjacentHTML("beforeend", `<div class="field"><label>${label} <span class="mono" id="v_${key}">${Number(cur).toFixed(2)}</span></label><input type="range" id="s_${key}" min="${cap.min}" max="${cap.max}" step="${step || cap.step || 0.01}" value="${cur}"></div>`);
+    $(`s_${key}`).oninput = async () => { const v = parseFloat($(`s_${key}`).value); $(`v_${key}`).textContent = v.toFixed(2); settings.camera[key] = v; saveSettings(); await applyCamera(); };
+  };
+  slider("focusDistance", "Focus (lock)", c.focusDistance); slider("exposureCompensation", "Exposure", c.exposureCompensation); slider("zoom", "Zoom", c.zoom);
+  $("tuneNote").textContent = c.focusDistance ? (settings.camera.focusDistance != null ? "focus locked" : "focus: auto") : "This browser does not allow manual focus (iPhone). Keep a fixed distance; a phone stand helps.";
+  $("tuneAuto").classList.toggle("hidden", !c.focusDistance);
+}
+$("tuneReset").onclick = async () => { settings.camera = {}; saveSettings(); try { await live.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {} buildTune(); };
+$("tuneAuto").onclick = async () => {
+  const cap = live.caps.focusDistance; if (!cap) return; setHint("Auto-tuning focus — hold the phone at your scanning distance…");
+  const ctx = grab.getContext("2d"); const measure = async () => { await sleep(260); ctx.drawImage(video, 0, 0, grab.width, grab.height); const a = measureSharp(); await sleep(120); ctx.drawImage(video, 0, 0, grab.width, grab.height); return (a + measureSharp()) / 2; };
+  let best = null;
+  const tryAt = async d => { try { await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: d }] }); } catch (e) {} const v = await measure(); if (!best || v > best.v) best = { d, v }; };
+  for (let i = 0; i < 10; i++) await tryAt(cap.min + (cap.max - cap.min) * i / 9);
+  const step = (cap.max - cap.min) / 9; for (let i = -2; i <= 2; i++) if (i) await tryAt(Math.min(cap.max, Math.max(cap.min, best.d + i * step / 3)));
+  settings.camera.focusDistance = best.d; saveSettings(); await applyCamera(); buildTune(); setHint("Focus locked. Keep this distance and scan away."); sound.ok();
+};
+
+/* ================= rendering ================= */
+function cardHtml(r) {
+  return `<div class="card" data-id="${r.id}" tabindex="0" role="button"><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}${r.variant ? " · " + esc(r.variant) : ""}${r.set_name ? " · " + esc(r.set_name) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.cond && r.cond !== "NM" ? " · " + esc(r.cond) : ""}${r.color ? " · " + esc(r.color) : ""}${r.type ? " · " + esc(r.type) : ""}${r.rarity ? " · " + esc(r.rarity) : ""}</div>${r.review ? `<div class="rev">check: ${esc(r.review)}</div>` : ""}</div><div class="price">${money(r.price)}${r.price_at_scan != null && r.price != null && Math.abs(r.price - r.price_at_scan) >= 0.01 ? `<div class="sub">${r.price > r.price_at_scan ? "▲" : "▼"} was ${money(r.price_at_scan)}</div>` : ""}</div></div>`;
+}
+let lastScanIds = [];
+function renderScan(rows) {
+  lastScanIds = rows.map(r => r.id); const hits = rows.filter(flagged).sort((a, b) => b.price - a.price);
+  $("hits").classList.toggle("hidden", !hits.length); $("hitList").innerHTML = hits.map(cardHtml).join("");
+  $("results").classList.remove("hidden"); $("list").innerHTML = rows.map(cardHtml).join("") || `<div class="empty">No cards read.</div>`;
+}
+function rerenderScan() { renderScan(inventory.filter(r => lastScanIds.includes(r.id))); }
+function renderInvTotals() {
+  const total = inventory.reduce((s, r) => s + (r.price || 0), 0), adj = inventory.reduce((s, r) => s + (r.price || 0) * (COND[r.cond] || 1), 0), hits = inventory.filter(flagged).length;
+  $("invTot").textContent = inventory.length ? `${inventory.length} cards · $${total.toFixed(2)}${Math.abs(adj - total) >= 0.01 ? ` ($${adj.toFixed(2)} after condition)` : ""} · ${hits} at $${fmtThr()}+` : "empty";
+  if (!$("invList").classList.contains("hidden")) renderInvList();
+}
+const COLOR_ORDER = ["White", "Blue", "Black", "Red", "Green"];
+function groupKey(r, by) { if (by === "list") return r.list || "Unsorted"; if (by === "tier") return tierOf(r); if (by === "color") return r.color || "Unknown"; if (by === "type") return r.type || "Unknown";
+  if (by === "rarity") return r.rarity ? r.rarity[0].toUpperCase() + r.rarity.slice(1) : "Unknown"; if (by === "set") return r.set ? `${r.set} · ${r.set_name || ""}` : "Unknown"; if (by === "cond") return r.cond || "NM"; return ""; }
+function groupOrder(keys, by) { const rank = k => { if (by === "tier") return k.startsWith("$") ? 0 : k.startsWith("25") ? 1 : k.startsWith("Bulk") ? 2 : 3;
+  if (by === "color") { const i = COLOR_ORDER.indexOf(k); return i >= 0 ? i : k.startsWith("Multi") ? 5 : k === "Colorless" ? 6 : k === "Land" ? 7 : 8; }
+  if (by === "rarity") return ["Mythic", "Rare", "Uncommon", "Common"].indexOf(k) + 1 || 9; if (by === "list") return k === "Unsorted" ? 1 : 0; if (by === "cond") return ["NM", "LP", "MP", "HP", "DMG"].indexOf(k); return 0; };
+  return keys.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)); }
+function renderInvList() {
+  const by = $("groupBy").value, q = $("search").value.trim().toLowerCase(), groups = new Map();
+  inventory.filter(r => !q || `${r.name} ${r.set} ${r.set_name} ${r.list} ${r.variant} ${r.type} ${r.color}`.toLowerCase().includes(q)).forEach(r => { const k = groupKey(r, by); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+  const keys = groupOrder(Array.from(groups.keys()), by);
+  $("invList").innerHTML = keys.map(k => { const rows = groups.get(k).sort((a, b) => (b.price || -1) - (a.price || -1)); const total = rows.reduce((s, r) => s + (r.price || 0), 0);
+    return `<div class="grp"><span>${esc(k)}</span><span class="mono">${rows.length} · $${total.toFixed(2)}</span></div>` + rows.map(cardHtml).join(""); }).join("") || `<div class="empty">${q ? "No matches." : "Nothing scanned yet."}</div>`;
+}
+$("groupBy").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
+$("search").oninput = () => { $("invList").classList.remove("hidden"); $("btnShowInv").textContent = "Hide"; renderInvList(); };
+$("btnShowInv").onclick = () => { const l = $("invList"); l.classList.toggle("hidden"); $("btnShowInv").textContent = l.classList.contains("hidden") ? "Show all" : "Hide"; if (!l.classList.contains("hidden")) renderInvList(); };
+$("btnClear").onclick = () => { if (confirm("Delete the whole inventory on this phone? Export first if you need it.")) { inventory = []; saveInv(); renderInvTotals(); renderInvList(); $("results").classList.add("hidden"); $("hits").classList.add("hidden"); } };
+document.addEventListener("click", e => { const c = e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); });
+document.addEventListener("keydown", e => { if (e.key === "Enter") { const c = e.target.closest && e.target.closest(".card[data-id]"); if (c) openFix(c.dataset.id); } });
+refreshListSelects(); renderInvTotals();
+
+/* ================= export ================= */
+const COLS = [["list", "List"], ["name", "Card"], ["set", "Set"], ["set_name", "Set name"], ["number", "#"], ["variant", "Variant"], ["rarity", "Rarity"], ["foil", "Foil"], ["cond", "Condition"], ["price", "TCG market ($)"], ["adj", "Adjusted ($)"], ["price_at_scan", "Price at scan ($)"], ["eur", "Cardmarket (€)"], ["flag", "Flag"], ["tier", "Price tier"], ["color", "Color"], ["type", "Type"], ["mv", "Mana value"], ["artist", "Artist"], ["released", "Released"], ["lang", "Lang"], ["review", "Review"], ["notes", "Notes"], ["note", "My note"], ["name_read", "Name as read"], ["via", "Identified by"], ["photo", "Source"], ["ts", "Scanned"], ["uri", "Scryfall"], ["image", "Image"], ["oracle_text", "Oracle text"]];
+function exportRows(rows) { return (rows || inventory).slice().sort((a, b) => (b.price || -1) - (a.price || -1)).map(r => { const o = {}; COLS.forEach(([k, h]) => { o[h] = k === "flag" ? (flagged(r) ? "YES" : "") : k === "foil" ? (r.foil ? "yes" : "no") : k === "tier" ? tierOf(r) : k === "list" ? (r.list || "Unsorted") : k === "adj" ? (r.price == null ? "" : Math.round(r.price * (COND[r.cond] || 1) * 100) / 100) : (r[k] == null ? "" : r[k]); }); return o; }); }
+function download(name, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+$("btnCsv").onclick = () => { const rows = exportRows(); const hdr = COLS.map(c => c[1]); const csv = [hdr, ...rows.map(r => hdr.map(h => `"${String(r[h]).replace(/"/g, '""')}"`))].map(l => l.join(",")).join("\n"); download("inventory.csv", new Blob([csv], { type: "text/csv" })); };
+$("btnXlsx").onclick = () => {
+  if (!window.XLSX) return setStatus("Excel export library did not load; use CSV.", true);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows()), "All cards");
+  const hits = inventory.filter(flagged); if (hits.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows(hits)), `$${fmtThr()}+`.slice(0, 31));
+  allLists().forEach(l => { const rows = inventory.filter(r => (r.list || "Unsorted") === l); if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows(rows)), l.replace(/[\\\/?*\[\]:]/g, "-").slice(0, 31)); });
+  XLSX.writeFile(wb, "inventory.xlsx");
+};
+
+/* ================= database buttons, repricing ================= */
+$("btnDb").onclick = async () => { $("dbStat").textContent = "Downloading…"; await loadDb(true); if (db.loaded) await repriceAll(); };
+$("btnReprice").onclick = async () => { if (!db.loaded) await loadDb(false); await repriceAll(); };
+async function repriceAll() {
+  let changed = 0, before = 0, after = 0;
+  for (const r of inventory) { if (!r.scryfall_id) continue; const c = await cardById(r.scryfall_id); if (!c) continue;
+    const [p] = priceOf(c, r.foil); before += r.price || 0; after += p || 0;
+    if (p !== r.price) { changed++; r.history = (r.history || []).concat([{ d: today(), p }]).slice(-24); r.price = p; }
+    r.eur = r.foil && c.prices.eur_foil != null ? c.prices.eur_foil : c.prices.eur; }
+  saveInv(); renderInvTotals(); if (!$("invList").classList.contains("hidden")) renderInvList();
+  setStatus(`Re-priced: ${changed} cards changed, total $${before.toFixed(2)} → $${after.toFixed(2)}.`);
+}
+loadDb(false);
+
+/* ================= fix / details sheet ================= */
+let fixRow = null, fixTimer = null, fixPrintsCache = [];
+function openFix(id) {
+  fixRow = inventory.find(r => r.id === id); if (!fixRow) return;
+  $("fixName").value = fixRow.name || fixRow.name_read || ""; $("fixFoil").checked = !!fixRow.foil; $("fixCond").value = fixRow.cond || "NM"; $("fixNote").value = fixRow.note || "";
+  fillListSelect($("fixList"), fixRow.list || "Unsorted"); $("fixNames").classList.add("hidden"); $("fixNames").innerHTML = "";
+  renderDetails(); $("sheet").classList.add("open"); loadPrints($("fixName").value);
+}
+function renderDetails() {
+  const r = fixRow; $("fixImg").src = r.image || imageUrl(r.scryfall_id) || ""; $("fixImg").alt = r.name || "";
+  const kv = [["Set", `${r.set} #${r.number}${r.set_name ? " · " + r.set_name : ""}`], ["Rarity / finish", `${r.rarity || "?"}${r.foil ? " · foil" : ""}${r.variant ? " · " + r.variant : ""}`],
+    ["Price", `${money(r.price)} TCGplayer market${r.eur != null ? ` · €${Number(r.eur).toFixed(2)} Cardmarket` : ""}${r.price_at_scan != null && r.price != null && r.price !== r.price_at_scan ? ` · was ${money(r.price_at_scan)} at scan` : ""}`],
+    ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? "by fingerprint (offline)" : r.via === "claude" ? "by Claude vision" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
+  $("fixKv").innerHTML = kv.filter(([, v]) => v).map(([k, v]) => `<div><b>${esc(k)}:</b> ${k === "Scryfall" ? v : esc(v)}</div>`).join("");
+  $("fixOracle").textContent = r.oracle_text || "";
+}
+function closeFix() { $("sheet").classList.remove("open"); fixRow = null; }
+$("sheet").addEventListener("click", e => { if (e.target === $("sheet")) closeFix(); });
+$("fixList").onchange = () => handleNewList($("fixList"), fixRow ? fixRow.list : "Unsorted");
+$("fixDone").onclick = async () => { const row = fixRow; closeFix(); if (!row) return; row.foil = $("fixFoil").checked; row.cond = $("fixCond").value; row.note = $("fixNote").value.trim();
+  const l = $("fixList").value; if (l && l !== NEW_LIST) row.list = l; if (row.scryfall_id) { const c = await cardById(row.scryfall_id); if (c) rowFromCard(row, c, row.foil); } saveInv(); refreshListSelects(); rerenderScan(); renderInvTotals(); };
+$("fixDelete").onclick = () => { if (fixRow && confirm(`Delete "${fixRow.name}"?`)) { inventory = inventory.filter(r => r !== fixRow); saveInv(); rerenderScan(); renderInvTotals(); } closeFix(); };
+$("fixName").oninput = () => { clearTimeout(fixTimer); const q = $("fixName").value.trim(); if (q.length < 3) return; fixTimer = setTimeout(async () => { const names = await nameSuggestions(q); $("fixNames").innerHTML = names.slice(0, 12).map(n => `<div class="opt" data-name="${esc(n)}">${esc(n)}</div>`).join(""); $("fixNames").classList.toggle("hidden", !names.length); }, 250); };
+$("fixNames").addEventListener("click", e => { const o = e.target.closest(".opt"); if (!o) return; $("fixName").value = o.dataset.name; $("fixNames").classList.add("hidden"); loadPrints(o.dataset.name); });
+async function loadPrints(name) {
+  const box = $("fixPrints"); box.innerHTML = `<div class="empty" style="padding:10px 0">Loading printings…</div>`;
+  const prints = await printsOf(name); fixPrintsCache = prints;
+  if (!prints.length) { box.innerHTML = `<div class="empty" style="padding:10px 0">No printings found for that name.</div>`; return; }
+  box.innerHTML = prints.map(c => `<div class="opt${fixRow && c.id === fixRow.scryfall_id ? " sel" : ""}" data-id="${c.id}"><span>${esc(c.set.toUpperCase())} #${esc(c.collector_number)} · ${esc(c.set_name)}${c.variant ? " · " + esc(c.variant) : ""}</span><span class="mono">${c.prices.usd != null ? "$" + Number(c.prices.usd).toFixed(2) : "—"}${c.prices.usd_foil != null ? " / ✶$" + Number(c.prices.usd_foil).toFixed(2) : ""}</span></div>`).join("");
+  box.onclick = e => { const o = e.target.closest(".opt"); if (!o || !fixRow) return; const c = fixPrintsCache.find(p => p.id === o.dataset.id); if (!c) return;
+    fixRow.review = ""; rowFromCard(fixRow, c, $("fixFoil").checked); if (fixRow.hash) learn(fixRow.hash, c.id); saveInv(); rerenderScan(); renderInvTotals(); renderDetails(); box.querySelectorAll(".opt").forEach(x => x.classList.toggle("sel", x === o)); };
+}
+})();
+</script>
+</body>
+</html>
