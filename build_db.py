@@ -173,8 +173,21 @@ def card_hash_from_image(im):
     return "".join(f"{int(''.join(map(str, bits[k:k + 4])), 2):x}" for k in range(0, 512, 4))
 
 
-def build_hashes(sets, out_path, cards_path, since=2010):
+class _Limiter:
+    """Global request pacing shared by the download threads: never more than ~8 requests per second to Scryfall."""
+    def __init__(self, per_second=8.0):
+        import threading
+        self.gap = 1.0 / per_second; self.lock = threading.Lock(); self.next_t = 0.0
+    def wait(self):
+        with self.lock:
+            now = time.time(); t = max(now, self.next_t); self.next_t = t + self.gap
+        d = t - time.time()
+        if d > 0: time.sleep(d)
+
+
+def build_hashes(sets, out_path, cards_path, since=2010, workers=6):
     from PIL import Image
+    from concurrent.futures import ThreadPoolExecutor
     if not Path(cards_path).exists():
         sys.exit(f"{cards_path} not found — run without --hash-sets first")
     with gzip.open(cards_path, "rb") as g:
@@ -183,30 +196,52 @@ def build_hashes(sets, out_path, cards_path, since=2010):
     if Path(out_path).exists():
         with gzip.open(out_path, "rb") as g:
             existing = json.load(g).get("h", {})
+    log_path = Path(str(out_path) + ".log")                    # append-only progress log: survives Ctrl+C and crashes
+    if log_path.exists():
+        for line in log_path.read_text().splitlines():
+            p = line.strip().split(" ")
+            if len(p) == 2 and len(p[1]) == 128: existing[p[0]] = p[1]
     if sets == ["all"]:
         sets = sorted({c[2] for c in db["cards"] if c[5] == "en" and (c[13] or "0000") >= f"{since}-01-01" and c[11].find("token") < 0})
         print(f"all {len(sets)} sets released since {since}")
     want = [c for c in db["cards"] if c[2] in sets and c[5] == "en" and c[0] not in existing]
-    print(f"{len(want):,} images to fetch for {', '.join(sets[:12])}{'…' if len(sets) > 12 else ''} ({len(existing):,} already hashed) — about {len(want) * 0.25 / 60:.0f} min; safe to stop and re-run")
-    done = 0; fails = 0; last = 0.0
-    for c in want:
-        cid = c[0]
-        url = f"https://cards.scryfall.io/normal/front/{cid[0]}/{cid[1]}/{cid}.jpg"
-        wait = 0.1 - (time.time() - last)
-        if wait > 0: time.sleep(wait)
-        try:
-            r = requests.get(url, headers={"User-Agent": UA["User-Agent"]}, timeout=30); last = time.time()
-            if r.status_code != 200: fails += 1; continue
-            existing[cid] = card_hash_from_image(Image.open(io.BytesIO(r.content)))
-        except Exception as e:
-            fails += 1
-        done += 1
-        if done % 50 == 0:
-            print(f"  {done}/{len(want)}", end="\r")
-            with gzip.open(out_path, "wb") as g:            # checkpoint
-                g.write(json.dumps({"built": time.strftime("%Y-%m-%d"), "bits": 512, "h": existing}).encode())
-    with gzip.open(out_path, "wb") as g:
-        g.write(json.dumps({"built": time.strftime("%Y-%m-%d"), "bits": 512, "h": existing}).encode())
+    print(f"{len(want):,} images to fetch for {', '.join(sets[:12])}{'…' if len(sets) > 12 else ''} ({len(existing):,} already hashed) — about {len(want) / 7.5 / 60:.0f} min with {workers} connections; safe to stop and re-run")
+    sess = requests.Session(); sess.headers.update({"User-Agent": UA["User-Agent"]})
+    limiter = _Limiter(8.0)
+
+    def one(c):
+        cid = c[0]; url = f"https://cards.scryfall.io/normal/front/{cid[0]}/{cid[1]}/{cid}.jpg"
+        for attempt in range(3):
+            limiter.wait()
+            try:
+                r = sess.get(url, timeout=30)
+                if r.status_code == 429: time.sleep(2 + attempt * 2); continue
+                if r.status_code != 200: return cid, None
+                return cid, card_hash_from_image(Image.open(io.BytesIO(r.content)))
+            except Exception:
+                time.sleep(1)
+        return cid, None
+
+    def save():
+        with gzip.open(out_path, "wb") as g:
+            g.write(json.dumps({"built": time.strftime("%Y-%m-%d"), "bits": 512, "h": existing}).encode())
+
+    done = fails = 0; t0 = time.time()
+    try:
+        with open(log_path, "a") as log, ThreadPoolExecutor(max_workers=workers) as ex:
+            for cid, h in ex.map(one, want):
+                done += 1
+                if h: existing[cid] = h; log.write(f"{cid} {h}\n")
+                else: fails += 1
+                if done % 100 == 0:
+                    log.flush(); rate = done / max(1e-6, time.time() - t0); left = (len(want) - done) / max(rate, 1e-6)
+                    print(f"  {done}/{len(want)}  {rate:.1f}/s  ~{left / 60:.0f} min left", end="\r", flush=True)
+                if done % 5000 == 0: save()
+    except KeyboardInterrupt:
+        print("\nstopped — saving what we have; run the same command again to continue")
+    save()
+    try: log_path.unlink()
+    except OSError: pass
     print(f"\n{len(existing):,} hashes -> {out_path} ({os.path.getsize(out_path) / 1e6:.1f} MB); {fails} failed")
 
 
@@ -215,11 +250,12 @@ def main():
     ap.add_argument("--langs", default="en", help="comma-separated languages for cards.json.gz (default en)")
     ap.add_argument("--hash-sets", default="", help='comma-separated set codes to fingerprint (e.g. mh3,mid,clb), or "all"')
     ap.add_argument("--since", type=int, default=2010, help='with --hash-sets all: only sets released this year or later (default 2010)')
+    ap.add_argument("--workers", type=int, default=6, help="parallel image downloads (default 6; total rate is capped at ~8 per second)")
     ap.add_argument("--out", default=".", help="output folder (put next to index.html)")
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     if a.hash_sets:
-        build_hashes([s.strip().lower() for s in a.hash_sets.split(",") if s.strip()], out / "hashes.json.gz", out / "cards.json.gz", a.since)
+        build_hashes([s.strip().lower() for s in a.hash_sets.split(",") if s.strip()], out / "hashes.json.gz", out / "cards.json.gz", a.since, a.workers)
     else:
         build_cards({s.strip().lower() for s in a.langs.split(",") if s.strip()}, out / "cards.json.gz")
 
