@@ -100,11 +100,13 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="field"><label for="autoList">Cards at or above that go to this list instead (optional)</label><select id="autoList"><option value="">— keep with the scan —</option></select></div>
   <div class="field"><label for="voice">Voice feedback while scanning</label><select id="voice"><option value="hits">Hits and problems</option><option value="all">Every card</option><option value="off">Off (beeps only)</option></select></div>
   <div class="field"><label for="aiMode">AI (Claude) use</label><select id="aiMode"><option value="manual">Only when I tap a card and ask (default)</option><option value="auto">Automatically for cards the fingerprints don't know</option></select></div>
+  <div class="field"><label for="ocrMode">Read card text on the phone (free, offline) when fingerprints don't match</label><select id="ocrMode"><option value="on">On — name, then type line, then bottom line</option><option value="off">Off</option></select></div>
   <div class="field"><label for="strict">Fingerprint matching</label><select id="strict"><option value="normal">Normal</option><option value="strict">Strict (fewer wrong matches)</option><option value="loose">Loose (more matches, more mistakes)</option></select></div>
   <div class="field"><label for="repeats">Sweep mode: a card seen again</label><select id="repeats"><option value="skip">Highlight it, don't add again</option><option value="count">Add it as another copy</option></select></div>
   <div class="row"><button id="saveSettings" type="button">Save</button><span class="status" id="settingsStatus"></span></div>
   <h3>Offline database</h3>
   <div class="dbstat"><span id="dbStat">Not loaded</span><span id="hashStat"></span></div>
+  <div class="dbstat"><span id="ocrStat">Text reader: loads on first use</span></div>
   <div class="small" id="coverage" style="margin-top:6px"></div>
   <div class="row"><button class="ghost" id="btnDb" type="button">Update database</button><button class="ghost" id="btnReprice" type="button">Re-price inventory</button></div>
   <div class="small" style="margin-top:8px">Build <span class="mono">cards.json.gz</span> (prices for every printing) and <span class="mono">hashes.json.gz</span> (fingerprints for your sets) with <span class="mono">build_db.py</span> and put them next to this page. With them, pricing is instant and offline, and cards from fingerprinted sets are identified without any API call.</div>
@@ -447,7 +449,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 "use strict";
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "cardscan_settings", INV_KEY = "cardscan_inventory", LEARNED_KEY = "cardscan_learned";
-const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip" },
+const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on" },
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
 let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
 inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
@@ -476,13 +478,13 @@ const imageUrl = id => id ? `https://cards.scryfall.io/normal/front/${id[0]}/${i
 
 /* ================= settings, lists ================= */
 $("apiKey").value = settings.apiKey; $("model").value = settings.model; $("threshold").value = settings.threshold; $("voice").value = settings.voice;
-$("aiMode").value = settings.aiMode; $("strict").value = settings.strict; $("repeats").value = settings.repeats;
+$("aiMode").value = settings.aiMode; $("strict").value = settings.strict; $("repeats").value = settings.repeats; $("ocrMode").value = settings.ocrMode;
 $("thrLabel").textContent = fmtThr();
 $("btnSettings").onclick = () => $("settings").classList.toggle("hidden");
 $("saveSettings").onclick = () => {
   settings.apiKey = $("apiKey").value.trim(); settings.model = $("model").value.trim() || "claude-sonnet-5";
   settings.threshold = parseFloat($("threshold").value) || 0; settings.autoList = $("autoList").value === NEW_LIST ? "" : $("autoList").value;
-  settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; saveSettings();
+  settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; settings.ocrMode = $("ocrMode").value; saveSettings();
   $("thrLabel").textContent = fmtThr(); $("settingsStatus").textContent = "Saved"; renderInvTotals();
   setTimeout(() => $("settingsStatus").textContent = "", 1500);
 };
@@ -789,6 +791,80 @@ function knownRow(m, hash, opts) {
     const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: card.name, notes: "", review: "", hash, via: "fingerprint" }, card, opts.foil);
     row.list = (settings.autoList && flagged(row)) ? settings.autoList : opts.list; return row; });
 }
+/* ================= on-phone text reading (Tesseract) ================= */
+const ocr = { ready: null, queue: Promise.resolve(), failed: false };
+function ocrStatus(t) { const el = $("ocrStat"); if (el) el.textContent = "Text reader: " + t; }
+async function ocrWorker() {
+  if (ocr.ready) return ocr.ready;
+  ocr.ready = (async () => {
+    const base = new URL(".", location.href).href;
+    const local = await fetch(base + "eng.traineddata", { method: "HEAD" }).then(r => r.ok).catch(() => false);
+    if (!window.Tesseract) {
+      const srcs = local ? [base + "tesseract.min.js"] : []; srcs.push("https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/7.0.0/tesseract.min.js", "https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js");
+      let ok = false; for (const s of srcs) { try { await tagScript(s); ok = !!window.Tesseract; if (ok) break; } catch (e) {} }
+      if (!ok) throw new Error("text reader library did not load");
+    }
+    ocrStatus(local ? "loading (from your site)…" : "loading (from CDN)…");
+    const opts = local ? { workerPath: base + "tesseract-worker.min.js", corePath: base + "tesseract-core-simd-lstm.wasm.js", langPath: base.replace(/\/$/, ""), gzip: false, cacheMethod: "write" } : { cacheMethod: "write" };
+    const w = await Tesseract.createWorker("eng", 1, opts);
+    await w.setParameters({ tessedit_pageseg_mode: "7", preserve_interword_spaces: "1" });
+    ocrStatus("ready" + (local ? " (offline)" : ""));
+    return w;
+  })().catch(e => { ocr.ready = null; ocr.failed = true; ocrStatus("failed — " + (e.message || e)); throw e; });
+  return ocr.ready;
+}
+function regionCanvas(src, x, y, w, h, scale, invert) {   // fractions of the card, upscaled for the reader
+  const W = src.width, H = src.height, c = document.createElement("canvas");
+  c.width = Math.max(8, Math.round(W * w * scale)); c.height = Math.max(8, Math.round(H * h * scale));
+  const g = c.getContext("2d"); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(src, Math.round(W * x), Math.round(H * y), Math.round(W * w), Math.round(H * h), 0, 0, c.width, c.height);
+  if (invert) { const d = g.getImageData(0, 0, c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { d.data[i] = 255 - d.data[i]; d.data[i + 1] = 255 - d.data[i + 1]; d.data[i + 2] = 255 - d.data[i + 2]; } g.putImageData(d, 0, 0); }
+  return c;
+}
+async function readRegion(w, canvas) { const r = await w.recognize(canvas); return (r && r.data && r.data.text || "").replace(/\s+/g, " ").trim(); }
+function cleanRead(t) {
+  t = t.replace(/[^A-Za-z0-9' ,\-]/g, " ").replace(/\s+/g, " ").trim(); const toks = t.split(" ").filter(Boolean);
+  while (toks.length && toks[0].length <= 1) toks.shift(); while (toks.length && toks[toks.length - 1].length <= 1) toks.pop(); return toks.join(" ");
+}
+function matchNames(read, k) {                 // -> top-k [{name (db key), score}] by bigram similarity
+  const q = read.toLowerCase(); if (q.length < 3) return []; const top = [];
+  for (const n of db.names) { if (Math.abs(n.length - q.length) > 6) continue; const s = sim(q, n); if (top.length < (k || 3) || s > top[top.length - 1].score) { top.push({ name: n, score: s }); top.sort((a, b) => b.score - a.score); if (top.length > (k || 3)) top.pop(); } }
+  return top;
+}
+const editDist = (a, b) => { const m = a.length, n = b.length, d = []; for (let i = 0; i <= m; i++) { d[i] = [i]; for (let j = 1; j <= n; j++) d[i][j] = i ? 0 : j; } for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; };
+/* name first, then the type line to confirm a close call, then the bottom line for the set code. Returns {card, reason, read} or null. */
+async function ocrIdentify(cropCanvas) {
+  if (settings.ocrMode === "off" || !db.loaded || ocr.failed) return null;
+  const w = await ocrWorker();
+  const run = async () => {
+    const titleText = cleanRead(await readRegion(w, regionCanvas(cropCanvas, 0.055, 0.035, 0.745, 0.07, 2)));
+    let top = matchNames(titleText, 3); if (!top.length) return null;
+    let best = top[0], second = top[1] ? top[1].score : 0;
+    if (best.score < 0.62) return null;
+    if (best.score - second < 0.06 || best.score < 0.75) {           // close call: let the type line decide
+      const typeText = (await readRegion(w, regionCanvas(cropCanvas, 0.055, 0.555, 0.745, 0.065, 2))).toLowerCase();
+      const words = typeText.split(/[^a-z]+/).filter(x => x.length > 3);
+      const scoreType = n => { const c = dbCard(db.byName.get(n)[0]); const tl = (c.type_line || "").toLowerCase(); return words.filter(x => tl.includes(x)).length; };
+      const rescored = top.filter(t => t.score >= 0.55).map(t => ({ ...t, ts: scoreType(t.name) })).sort((a, b) => (b.score + 0.08 * b.ts) - (a.score + 0.08 * a.ts));
+      if (!rescored.length) return null; best = rescored[0]; const s2 = rescored[1]; if (s2 && (best.score + 0.08 * best.ts) - (s2.score + 0.08 * s2.ts) < 0.04) return null;
+      if (best.score < 0.62) return null;
+    }
+    let prints = db.byName.get(best.name).map(dbCard).filter(c => c.lang === "en").sort(priceSort); if (!prints.length) return null;
+    const read = { name: prints[0].name, title: titleText, set: null };
+    if (prints.length > 1) {                                            // bottom line: set code picks the printing
+      const botText = (await readRegion(w, regionCanvas(cropCanvas, 0.04, 0.90, 0.52, 0.075, 3, true))).toUpperCase();
+      const toks = botText.split(/[^A-Z0-9]+/).filter(x => x.length >= 3 && x.length <= 4);
+      const sets = Array.from(new Set(prints.map(c => c.set.toUpperCase())));
+      let bestSet = null, bd = 9; for (const t of toks) for (const s of sets) { const d = editDist(t, s); if (d < bd) { bd = d; bestSet = s; } }
+      if (bestSet && bd <= (sets.length > 20 ? 0 : 1)) { read.set = bestSet; prints = prints.filter(c => c.set.toUpperCase() === bestSet); }
+    }
+    const card = prints[0];
+    const reason = prints.length === 1 ? "" : `${prints.length} printings${read.set ? " in " + read.set : ""} — cheapest assumed, tap to pick`;
+    return { card, reason: [reason, best.score < 0.8 ? "name read is uncertain — check" : ""].filter(Boolean).join("; "), read, exact: prints.length === 1 && best.score >= 0.8 };
+  };
+  const p = ocr.queue.then(run, run); ocr.queue = p.catch(() => {}); return p;
+}
+
 /* One crop -> row. Fingerprints (offline, instant) first. Unknown cards become red rows that keep their crop;
    Claude only runs when the user asks (or when AI use is set to automatic). */
 async function unknownRow(cropCanvas, hash, opts) {
@@ -835,6 +911,13 @@ async function identifyCrop(cropCanvas, opts) {
   if (m) { const row = await knownRow(m, hash, opts); if (row) { row.dist = m.dist; if (how) row.notes = [row.notes, `matched ${how}`].filter(Boolean).join("; ");
       if (m.dist <= acceptDist() - 10 && !learned[hash]) learn(hash, m.id);      // remember this phone's own picture of the card: next time it matches even closer
       return row; } }
+  try {
+    const o = await ocrIdentify(cropCanvas);
+    if (o) { const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: o.read.title, notes: "", review: o.reason, hash, via: "ocr" }, o.card, opts.foil);
+      row.list = (settings.autoList && flagged(row)) ? settings.autoList : opts.list;
+      if (o.exact) learn(hash, o.card.id); else await cropStore.put(row.id, cropCanvas.toDataURL("image/jpeg", 0.85));
+      return row; }
+  } catch (e) { console.warn("ocr", e); }
   const row = await unknownRow(cropCanvas, hash, opts);
   if (settings.aiMode === "auto" && settings.apiKey) { try { await aiIdentify(row); } catch (e) { row.review = "AI could not read it: " + (e.message || e); } }
   return row;
@@ -986,6 +1069,7 @@ async function startLive() {
     $("liveTorch").classList.toggle("hidden", !live.caps.torch);
     await applyCamera();
     live.on = true; live.lastT = 0; setMode(live.mode);
+    if (settings.ocrMode !== "off" && db.loaded) ocrWorker().catch(() => {});
     live.raf = requestAnimationFrame(liveLoop);
   } catch (e) {
     stopLive(); setStatus(e && e.name === "NotAllowedError" ? "Camera permission denied — allow the camera for this site in your browser settings." : "Camera failed: " + (e.message || e), true);
@@ -1113,7 +1197,7 @@ function renderLiveLast() {
     if (i.status === "unread") return `<div class="li unread" data-k="${k}"><img src="${i.thumb}" alt=""><div><div class="n">Not read — ${esc(i.desc || "")}, ${esc(i.pos || "")}</div><div class="sub">${esc(i.error)} · tap to retry</div></div><div></div></div>`;
     const r = i.row;
     if (r.unknown) return `<div class="li unknown" data-row="${r.id}"><img src="${i.thumb}" alt=""><div><div class="n">Unknown card — ${esc(r.desc || "")}</div><div class="sub">tap to pick a match or ask AI</div></div><div></div></div>`;
-    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[rowStatus(r)]};padding-left:8px"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? ` · instant${r.dist != null ? " " + Math.max(0, Math.round(100 - r.dist / 2.56)) + "%" : ""}` : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
+    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[rowStatus(r)]};padding-left:8px"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? ` · instant${r.dist != null ? " " + Math.max(0, Math.round(100 - r.dist / 2.56)) + "%" : ""}` : r.via === "ocr" ? " · read" : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
   }).join("");
 }
 $("liveLast").addEventListener("click", e => {
@@ -1346,7 +1430,7 @@ async function renderDetails() {
   $("fixImg").src = r.image || imageUrl(r.scryfall_id) || ""; $("fixImg").alt = r.name || "";
   const kv = [["Set", `${r.set} #${r.number}${r.set_name ? " · " + r.set_name : ""}`], ["Rarity / finish", `${r.rarity || "?"}${r.foil ? " · foil" : ""}${r.variant ? " · " + r.variant : ""}`],
     ["Price", `${money(r.price)} TCGplayer market${r.eur != null ? ` · €${Number(r.eur).toFixed(2)} Cardmarket` : ""}${r.price_at_scan != null && r.price != null && r.price !== r.price_at_scan ? ` · was ${money(r.price_at_scan)} at scan` : ""}`],
-    ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? `by fingerprint (offline${r.dist != null ? `, match ${Math.max(0, Math.round(100 - r.dist / 2.56))}%` : ""})` : r.via === "claude" ? "by Claude vision" : r.via === "manual" ? "by you" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
+    ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? `by fingerprint (offline${r.dist != null ? `, match ${Math.max(0, Math.round(100 - r.dist / 2.56))}%` : ""})` : r.via === "ocr" ? `by reading the card text on the phone${r.name_read ? ` ("${r.name_read}")` : ""}` : r.via === "claude" ? "by Claude vision" : r.via === "manual" ? "by you" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
   $("fixKv").innerHTML = kv.filter(([, v]) => v).map(([k, v]) => `<div><b>${esc(k)}:</b> ${k === "Scryfall" ? v : esc(v)}</div>`).join("");
   $("fixOracle").textContent = r.oracle_text || "";
 }
