@@ -108,10 +108,22 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="field"><label for="autoList">Cards at or above that go to this list instead (optional)</label><select id="autoList"><option value="">— keep with the scan —</option></select></div>
   <div class="field"><label for="voice">Voice feedback while scanning</label><select id="voice"><option value="hits">Hits and problems</option><option value="all">Every card</option><option value="off">Off (beeps only)</option></select></div>
   <div class="field"><label for="aiMode">AI (Claude) use</label><select id="aiMode"><option value="manual">Only when I tap a card and ask (default)</option><option value="auto">Automatically for cards the fingerprints don't know</option></select></div>
+  <div class="field"><label for="sortAssist">Sort-assist: say which pile each card goes to</label><select id="sortAssist"><option value="off">Off</option><option value="on">On — uses the rules below</option></select></div>
+  <div class="row" id="sortRules"><div class="field" style="flex:1;margin:0"><label for="foilList">Foils go to</label><select id="foilList"><option value="">— the scan list —</option></select></div>
+    <div class="field" style="flex:1;margin:0"><label for="bulkList">Everything else goes to</label><select id="bulkList"><option value="">— the scan list —</option></select></div></div>
+  <div class="field"><label for="foilGuess">Foil guessing (from the shimmer while you hover; trained in the camera walk-through)</label><select id="foilGuess"><option value="on">On — sets foil when confident, asks when not</option><option value="off">Off — use the foil checkbox</option></select></div>
+  <div class="field"><label for="voiceCmd">Voice commands while scanning ("undo", "foil", "not foil", "snap", "pause", "resume", "look up")</label><select id="voiceCmd"><option value="off">Off</option><option value="on">On (uses the microphone)</option></select></div>
+  <div class="field"><label for="playset">Extras report: copies beyond this many are extras</label><input type="number" id="playset" value="4" min="1" step="1"></div>
   <div class="field"><label for="ocrMode">Read card text on the phone (free, offline) when fingerprints don't match</label><select id="ocrMode"><option value="on">On — name, then type line, then bottom line</option><option value="off">Off</option></select></div>
   <div class="field"><label for="strict">Fingerprint matching</label><select id="strict"><option value="normal">Normal</option><option value="strict">Strict (fewer wrong matches)</option><option value="loose">Loose (more matches, more mistakes)</option></select></div>
   <div class="field"><label for="repeats">Sweep mode: a card seen again</label><select id="repeats"><option value="skip">Highlight it, don't add again</option><option value="count">Add it as another copy</option></select></div>
   <div class="row"><button id="saveSettings" type="button">Save</button><span class="status" id="settingsStatus"></span></div>
+  <h3>Google Drive</h3>
+  <div class="small">Backups, exports and card photos go to a <span class="mono">cardscan</span> folder in your own Drive. One-time setup: create a free Google Cloud project, enable the Drive API, make an OAuth client ID (Web application) with this site's address as an authorized JavaScript origin, and paste the client ID here. Full steps in the README.</div>
+  <div class="field"><label for="gClientId">Google OAuth client ID</label><input type="text" id="gClientId" placeholder="123456789-abc.apps.googleusercontent.com"></div>
+  <div class="row"><button class="ghost" id="btnDriveConnect" type="button">Connect Google Drive</button><button class="ghost" id="btnDriveRestore" type="button">Restore latest from Drive</button><span class="small" id="driveStat">not connected</span></div>
+  <div class="row"><label class="chk"><input type="checkbox" id="driveAuto" checked> back up automatically after every session and daily</label></div>
+  <div class="field"><label for="photoMin">Save card photos to Drive for cards at or above ($, 0 = never)</label><input type="number" id="photoMin" value="5" step="1" min="0"></div>
   <h3>Offline database</h3>
   <div class="dbstat"><span id="dbStat">Not loaded</span><span id="hashStat"></span></div>
   <div class="dbstat"><span id="ocrStat">Text reader: loads on first use</span></div>
@@ -153,6 +165,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="row"><span class="sub">Export</span><select id="exportFmt" style="flex:1;width:auto">
     <option value="csv">CSV — everything</option><option value="xlsx">Excel — everything, one tab per list</option>
     <option value="manabox">ManaBox CSV (import into ManaBox)</option><option value="moxfield">Moxfield CSV</option><option value="deckbox">Deckbox CSV</option>
+    <option value="tcgmass">TCGplayer mass-entry list (all cards)</option><option value="tcgextras">TCGplayer mass-entry list (extras only)</option>
     <option value="backup">Backup file (inventory + learned fingerprints + settings)</option></select><button class="ghost" id="btnExport" type="button">Save</button></div>
   <div class="row"><label class="file" style="flex:1;padding:10px" id="restoreDrop"><input type="file" id="restoreFile" accept=".json,application/json"><span>Restore from a backup file</span></label>
     <label class="file" style="flex:1;padding:10px"><input type="file" id="importFile" accept=".csv,text/csv"><span>Import a ManaBox / TCGplayer CSV</span></label><button class="danger" id="btnClear" type="button">Clear</button></div>
@@ -165,8 +178,8 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <video id="liveVideo" playsinline muted autoplay></video>
   <canvas id="liveOverlay"></canvas>
   <div class="liveTop">
-    <div class="seg"><button id="modeSingle" type="button" class="on">One at a time</button><button id="modeSweep" type="button">Sweep</button></div>
-    <span><span id="liveCount" class="mono">0</span> · <span id="liveList"></span></span>
+    <div class="seg"><button id="modeSingle" type="button" class="on">One</button><button id="modeStand" type="button">Stand</button><button id="modeSweep" type="button">Sweep</button><button id="modeLookup" type="button">Look up</button></div>
+    <span><span id="liveCount" class="mono">0</span> · <span id="liveTotal" class="mono" style="color:var(--gold)">$0.00</span> · <span id="liveList"></span></span>
     <label class="chk"><input type="checkbox" id="liveFoil"> foil</label>
     <button class="ghost" id="liveMute" type="button" style="padding:4px 8px;font-size:13px;color:#fff;border-color:rgba(255,255,255,.35)">🔊</button>
   </div>
@@ -474,7 +487,7 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
 "use strict";
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "cardscan_settings", INV_KEY = "cardscan_inventory", LEARNED_KEY = "cardscan_learned";
-const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on" },
+const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on", sortAssist: "off", foilList: "", bulkList: "", voiceCmd: "off", playset: 4, gClientId: "", driveAuto: true, photoMin: 5, drive: {}, foil: {} },
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
 let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
 inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
@@ -504,12 +517,15 @@ const imageUrl = id => id ? `https://cards.scryfall.io/normal/front/${id[0]}/${i
 /* ================= settings, lists ================= */
 $("apiKey").value = settings.apiKey; $("model").value = settings.model; $("threshold").value = settings.threshold; $("voice").value = settings.voice;
 $("aiMode").value = settings.aiMode; $("strict").value = settings.strict; $("repeats").value = settings.repeats; $("ocrMode").value = settings.ocrMode;
+$("sortAssist").value = settings.sortAssist; $("voiceCmd").value = settings.voiceCmd; $("foilGuess").value = settings.foil.off ? "off" : "on"; $("playset").value = settings.playset; $("gClientId").value = settings.gClientId || ""; $("driveAuto").checked = settings.driveAuto !== false; $("photoMin").value = settings.photoMin;
 $("thrLabel").textContent = fmtThr();
 $("btnSettings").onclick = () => $("settings").classList.toggle("hidden");
 $("saveSettings").onclick = () => {
   settings.apiKey = $("apiKey").value.trim(); settings.model = $("model").value.trim() || "claude-sonnet-5";
   settings.threshold = parseFloat($("threshold").value) || 0; settings.autoList = $("autoList").value === NEW_LIST ? "" : $("autoList").value;
-  settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; settings.ocrMode = $("ocrMode").value; saveSettings();
+  settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; settings.ocrMode = $("ocrMode").value;
+  settings.foil.off = $("foilGuess").value === "off"; settings.sortAssist = $("sortAssist").value; settings.foilList = $("foilList").value === NEW_LIST ? "" : $("foilList").value; settings.bulkList = $("bulkList").value === NEW_LIST ? "" : $("bulkList").value; settings.voiceCmd = $("voiceCmd").value;
+  settings.playset = Math.max(1, parseInt($("playset").value) || 4); settings.gClientId = $("gClientId").value.trim(); settings.driveAuto = $("driveAuto").checked; settings.photoMin = Math.max(0, parseFloat($("photoMin").value) || 0); saveSettings();
   $("thrLabel").textContent = fmtThr(); $("settingsStatus").textContent = "Saved"; renderInvTotals();
   setTimeout(() => $("settingsStatus").textContent = "", 1500);
 };
@@ -524,7 +540,16 @@ function fillListSelect(sel, value, extraFirst) {
   sel.innerHTML = (extraFirst || "") + lists.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join("") + `<option value="${NEW_LIST}">＋ New list…</option>`;
   sel.value = value && (lists.includes(value) || value === "") ? value : (extraFirst ? "" : lists[0]);
 }
-function refreshListSelects() { fillListSelect($("scanList"), settings.lastList); fillListSelect($("autoList"), settings.autoList, `<option value="">— keep with the scan —</option>`); }
+function refreshListSelects() { fillListSelect($("scanList"), settings.lastList); fillListSelect($("autoList"), settings.autoList, `<option value="">— keep with the scan —</option>`);
+  fillListSelect($("foilList"), settings.foilList, `<option value="">— the scan list —</option>`); fillListSelect($("bulkList"), settings.bulkList, `<option value="">— the scan list —</option>`); }
+$("foilList").onchange = () => { settings.foilList = handleNewList($("foilList"), ""); saveSettings(); };
+$("bulkList").onchange = () => { settings.bulkList = handleNewList($("bulkList"), ""); saveSettings(); };
+/* which pile a card belongs to, by the rules: threshold -> autoList, foil -> foilList, else bulkList / the scan list */
+function pileFor(row, scanList) {
+  if (settings.autoList && flagged(row)) return settings.autoList;
+  if (row.foil && settings.foilList) return settings.foilList;
+  return settings.bulkList || scanList;
+}
 function handleNewList(sel, fallback) {
   if (sel.value !== NEW_LIST) return sel.value;
   const name = (prompt("Name for the new list (e.g. Sell, Trade binder, Box 3):") || "").trim();
@@ -810,14 +835,14 @@ async function buildRow(rd, foilBatch, photo, listName, extra) {
   const foil = foilBatch || rd.foil === true;
   const row = rowFromCard(Object.assign({ id: newId(), ts: now(), photo, name_read: rd.name, notes: [rd.notes, (rd.frame && rd.frame !== "normal") ? rd.frame : ""].filter(Boolean).join("; "),
     review: [reason, (rd.confidence || "").toLowerCase() === "low" ? "low confidence" : "", rd.extra ? "not auto-detected; found in whole photo" : ""].filter(Boolean).join("; ") }, extra || {}), card, foil);
-  row.list = (settings.autoList && flagged(row)) ? settings.autoList : listName;
+  row.list = pileFor(row, listName);
   if (card && rd.set_code && rd.collector_number && row.hash && !reason) learn(row.hash, card.id);   // exact read -> remember its fingerprint
   return row;
 }
 function knownRow(m, hash, opts) {
   return cardById(m.id).then(card => { if (!card) return null;
     const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: card.name, notes: "", review: "", hash, via: "fingerprint" }, card, opts.foil);
-    row.list = (settings.autoList && flagged(row)) ? settings.autoList : opts.list; return row; });
+    row.list = pileFor(row, opts.list); return row; });
 }
 /* ================= on-phone text reading (Tesseract) ================= */
 const ocr = { ready: null, queue: Promise.resolve(), failed: false };
@@ -944,7 +969,7 @@ async function identifyCrop(cropCanvas, opts) {
   try {
     const o = await ocrIdentify(cropCanvas);
     if (o && o.card) { const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: o.read.title, notes: "", review: o.reason, hash, via: "ocr" }, o.card, opts.foil);
-      row.list = (settings.autoList && flagged(row)) ? settings.autoList : opts.list;
+      row.list = pileFor(row, opts.list);
       if (o.exact) learn(hash, o.card.id); else await cropStore.put(row.id, cropCanvas.toDataURL("image/jpeg", 0.85));
       return row; }
     if (o && o.guesses) { guesses = o.guesses; title = o.title; }
@@ -1057,7 +1082,7 @@ function speak(text, important) {
   if (settings.voice === "off" || settings.mute || !("speechSynthesis" in window)) return;
   if (settings.voice === "hits" && !important) return;
   try { if (important && speechSynthesis.speaking) speechSynthesis.cancel(); else if (speechSynthesis.speaking && !important) return;
-    const u = new SpeechSynthesisUtterance(text); u.rate = 1.1; speechSynthesis.speak(u); } catch (e) {}
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.1; if (vc.on && vc.rec) { try { vc.rec.abort(); } catch (e) {} vc.on = false; u.onend = () => { if (vc.wanted && live.on) setTimeout(() => { try { vc.rec.start(); vc.on = true; } catch (e) {} }, 250); }; } speechSynthesis.speak(u); } catch (e) {}
 }
 const dollars = p => p == null ? "no price" : p >= 1 ? `${Math.floor(p)} ${Math.floor(p) === 1 ? "dollar" : "dollars"}${Math.round((p % 1) * 100) ? ` ${Math.round((p % 1) * 100)}` : ""}` : `${Math.round(p * 100)} cents`;
 
@@ -1096,9 +1121,10 @@ const live = { on: false, paused: false, stream: null, track: null, caps: {}, cv
                prevGray: null, steady: 0, hoverCool: false, moving: 0, ic: null, noIC: false };
 const video = $("liveVideo"), overlay = $("liveOverlay"), grab = document.createElement("canvas"), full = document.createElement("canvas");
 function setHint(t) { $("liveHint").textContent = t; }
-function setMode(m) { live.mode = m; settings.mode = m; saveSettings(); $("modeSingle").classList.toggle("on", m === "single"); $("modeSweep").classList.toggle("on", m === "sweep"); live.tracks = []; if (live.tracker) live.tracker.reset();
-  setHint(m === "sweep" ? "Move slowly over the cards. Each one is read as it comes into focus." : "Hold over a card, keep still for a second — it snaps by itself. Or tap 📸."); }
-$("modeSingle").onclick = () => setMode("single"); $("modeSweep").onclick = () => setMode("sweep");
+const HINTS = { single: "Hold over a card, keep still for a second — it snaps by itself. Or tap 📸.", stand: "Phone on a stand: put a card down, it snaps when the picture settles; swap cards and it snaps the next.", sweep: "Move slowly over the cards. Each one is read as it comes into focus.", lookup: "Look-up: show a card and I'll tell you if you own it. Nothing is added." };
+function setMode(m) { live.mode = m; settings.mode = m; saveSettings(); ["single", "stand", "sweep", "lookup"].forEach(k => $("mode" + k[0].toUpperCase() + k.slice(1)).classList.toggle("on", m === k)); live.tracks = []; if (live.tracker) live.tracker.reset(); live.hoverCool = false; setHint(HINTS[m] || HINTS.single); }
+$("modeSingle").onclick = () => setMode("single"); $("modeStand").onclick = () => setMode("stand"); $("modeSweep").onclick = () => setMode("sweep"); $("modeLookup").onclick = () => setMode("lookup");
+const singleLike = () => live.mode !== "sweep";
 $("btnLive").onclick = startLive;
 async function startLive() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setStatus("Live scan needs camera access, which needs the app opened over https (GitHub Pages is fine).", true); return; }
@@ -1106,7 +1132,7 @@ async function startLive() {
   try { if ("speechSynthesis" in window) speechSynthesis.getVoices(); } catch (e) {}
   live.listName = currentList(); settings.lastList = live.listName; saveSettings();
   $("liveList").textContent = live.listName; $("liveCount").textContent = "0"; $("liveLast").innerHTML = ""; $("liveFoil").checked = $("foil").checked;
-  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.retry = null; live.rescan = null; live.paused = false; live.prevGray = null; live.steady = 0; live.hoverCool = false; live.ic = null; live.noIC = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden"); $("pick").classList.add("hidden"); $("liveCards").textContent = "Cards (0)";
+  live.items = []; live.tracks = []; live.recent = []; live.seen = []; live.sheen = []; live.retry = null; live.rescan = null; live.paused = false; live.prevGray = null; live.steady = 0; live.hoverCool = false; live.ic = null; live.noIC = false; $("livePause").textContent = "Pause"; $("tune").classList.add("hidden"); $("pick").classList.add("hidden"); $("liveCards").textContent = "Cards (0)";
   $("live").classList.remove("hidden"); setHint("Starting camera…");
   try {
     live.cv = await loadCv(); live.det = makeDetector(live.cv); live.tracker = new live.det.LiveTracker({ lockFrames: 4, clearFrames: 5, iou: 0.8 });
@@ -1116,7 +1142,7 @@ async function startLive() {
     try { live.caps = live.track.getCapabilities ? live.track.getCapabilities() : {}; } catch (e) { live.caps = {}; }
     $("liveTorch").classList.toggle("hidden", !live.caps.torch);
     await applyCamera();
-    live.on = true; live.lastT = 0; setMode(live.mode);
+    live.on = true; live.lastT = 0; setMode(live.mode); keepAwake(true); voiceStart();
     if (!(settings.camera && settings.camera.trained)) setTimeout(() => { if (live.on) startTrain(); }, 600);
     if (settings.ocrMode !== "off" && db.loaded) ocrWorker().catch(() => {});
     live.raf = requestAnimationFrame(liveLoop);
@@ -1125,7 +1151,8 @@ async function startLive() {
   }
 }
 function stopLive() {
-  live.on = false; cancelAnimationFrame(live.raf);
+  live.on = false; cancelAnimationFrame(live.raf); keepAwake(false); voiceStop();
+  if (live.items.some(i => i.row)) driveAutoBackup("session");
   if (live.stream) { live.stream.getTracks().forEach(t => t.stop()); live.stream = null; }
   video.srcObject = null; $("live").classList.add("hidden");
   const rows = live.items.filter(i => i.row).map(i => i.row);
@@ -1134,6 +1161,37 @@ function stopLive() {
     setStatus(`${rows.length} cards scanned → "${live.listName}"${moved ? ` (${moved} at $${fmtThr()}+ went to "${settings.autoList}")` : ""}${unk ? `. ${unk} unknown — red rows below.` : "."}${unread ? ` ${unread} not read.` : ""}`); }
 }
 $("liveDone").onclick = stopLive;
+/* keep the screen on while the camera is open */
+let wakeLock = null;
+async function keepAwake(on) { try { if (on && "wakeLock" in navigator) { wakeLock = await navigator.wakeLock.request("screen"); } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (e) {} }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && live.on) keepAwake(true); });
+/* voice commands: a few words, checked between the app's own announcements */
+const vc = { rec: null, on: false, wanted: false };
+function voiceStart() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR || settings.voiceCmd !== "on") return; vc.wanted = true;
+  try { const r = new SR(); r.continuous = true; r.interimResults = false; r.lang = "en-US";
+    r.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) voiceCommand(e.results[i][0].transcript.trim().toLowerCase()); };
+    r.onend = () => { vc.on = false; if (vc.wanted && live.on) setTimeout(() => { try { r.start(); vc.on = true; } catch (e) {} }, 400); };
+    r.onerror = () => {}; r.start(); vc.rec = r; vc.on = true; } catch (e) {}
+}
+function voiceStop() { vc.wanted = false; try { if (vc.rec) vc.rec.stop(); } catch (e) {} vc.rec = null; vc.on = false; }
+function voiceCommand(t) {
+  if (!live.on) return; const last = live.items.find(i => i.row);
+  if (/\b(undo|remove that|delete that)\b/.test(t)) $("liveUndo").click();
+  else if (/\bnot foil\b|\bnon.?foil\b/.test(t)) { $("liveFoil").checked = false; if (last && last.row.foil) { last.row.foil = false; rowFromCard(last.row, null, false); } setHint("Foil off"); }
+  else if (/\bfoil\b/.test(t)) { $("liveFoil").checked = true; if (last && !last.row.foil) { setFoil(last.row, true); } setHint("Foil on"); }
+  else if (/\b(snap|take it|capture|photo)\b/.test(t)) $("liveSnap").click();
+  else if (/\bpause\b/.test(t) && !live.paused) $("livePause").click();
+  else if (/\b(resume|continue|go on)\b/.test(t) && live.paused) $("livePause").click();
+  else if (/\blook ?up\b/.test(t)) setMode("lookup");
+  else if (/\bsweep\b/.test(t)) setMode("sweep");
+  else if (/\bstand\b/.test(t)) setMode("stand");
+  else if (/\bone at a time\b|\bsingle\b/.test(t)) setMode("single");
+  else if (/\bplus one\b|\banother one\b|\bsame again\b/.test(t)) $("livePlus").click();
+  else if (/\bdone\b|\bfinish\b|\bstop scanning\b/.test(t)) stopLive();
+  else return; sound.ok();
+}
+async function setFoil(row, foil) { foilCorrect(row, foil); row.review = (row.review || "").replace(/;?\s*foil\?[^;]*/, "").trim(); row.foil = foil; if (row.scryfall_id) { const c = await cardById(row.scryfall_id); if (c) rowFromCard(row, c, foil); } row.list = pileFor(row, live.listName || row.list); saveInv(); renderLiveLast(); updateCount(); }
 $("liveMute").textContent = settings.mute ? "🔇" : "🔊";
 $("liveMute").onclick = () => { settings.mute = !settings.mute; saveSettings(); $("liveMute").textContent = settings.mute ? "🔇" : "🔊"; };
 $("livePause").onclick = () => { live.paused = !live.paused; $("livePause").textContent = live.paused ? "Resume" : "Pause"; setHint(live.paused ? "Paused" : "Go on"); };
@@ -1143,7 +1201,7 @@ $("livePlus").onclick = () => {
   const copy = Object.assign({}, last.row, { id: newId(), ts: now() }); inventory.push(copy); saveInv();
   live.items.unshift({ row: copy, thumb: last.thumb, status: "done" }); renderLiveLast(); sound.ok(); updateCount();
 };
-function updateCount() { const n = live.items.filter(i => i.row).reduce((s, i) => s + qtyOf(i.row), 0); $("liveCount").textContent = String(n); $("liveCards").textContent = `Cards (${n})`; }
+function updateCount() { const rows = live.items.filter(i => i.row); const n = rows.reduce((s, i) => s + qtyOf(i.row), 0), tot = rows.reduce((s, i) => s + (i.row.price || 0) * qtyOf(i.row), 0); $("liveCount").textContent = String(n); $("liveTotal").textContent = "$" + tot.toFixed(2); $("liveCards").textContent = `Cards (${n})`; }
 $("liveSnap").onclick = () => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad, true); };
 function beginRescan(row) {
   const go = () => { live.rescan = row; live.tracker.reset(); live.hoverCool = false; if (live.mode === "sweep") setMode("single"); setHint(`Rescanning ${row.unknown ? "the unknown card" : row.name}: hold over it and tap the screen`); };
@@ -1180,7 +1238,7 @@ function drawOverlay(quad, state) {
   const g = overlay.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, m.cw, m.ch);
   const P = q => q.map(p => ({ x: p.x * m.s + m.ox, y: p.y * m.s + m.oy }));
   const poly = (q, color, width, dash) => { g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.beginPath(); q.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.stroke(); g.setLineDash([]); };
-  if (live.mode === "single" || live.retry) { poly(P(guideQuad()), "rgba(255,255,255,.25)", 1.5, [8, 8]);
+  if (singleLike() || live.retry) { poly(P(guideQuad()), "rgba(255,255,255,.25)", 1.5, [8, 8]);
     if (quad) poly(P(quad), trackColor[state] || (state === "lock" ? "#e0b64a" : "rgba(255,255,255,.8)"), state === "lock" ? 5 : 3); }
   if (live.mode === "sweep") for (const t of live.tracks) { if (t.item) t.status = itemStatus(t.item); const q = P(t.quad); poly(q, trackColor[t.status] || "#fff", t.status === "pending" ? 2 : 3, t.status === "reading" ? [6, 6] : null);
     const r = t.item && t.item.row;
@@ -1199,12 +1257,14 @@ function liveLoop(t) {
   if (train.meter) { const v = measureSharp(); sharpMax = Math.max(sharpMax * 0.995, v, 1); const good = v > 12 && v >= 0.7 * sharpMax; $("trainBar").style.width = Math.min(100, 100 * v / sharpMax) + "%"; $("trainBar").style.background = good ? "#6fbf8a" : "#e0805a"; }
   const motion = frameMotion(gctx);
   if (!$("train").classList.contains("hidden")) return;                               // training in progress: frames only, no captures
-  if (live.mode === "single" || live.retry) {
+  if (singleLike() || live.retry) {
     let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
+    if (live.mode === "stand" && motion > 12) { live.standMoves = (live.standMoves || 0) + 1; if (motion > 25 || live.standMoves >= 2) { live.tracker.reset(); live.hoverCool = false; live.steady = 0; live.standMoves = 0; } } else if (live.mode === "stand") live.standMoves = 0;
     if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
+    if (quad) sheenPush(gctx, quad, s); else if (live.sheen && live.sheen.length && motion > 20) sheenReset();
     live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev === "held" && live.items[0] ? itemStatus(live.items[0]) : ev);
     if (ev === "lock") { live.hoverCool = true; liveCapture(quad, null, live.retry); }
-    else if (ev === "held") setHint("Got it — lift the card and place the next one");
+    else if (ev === "held") setHint(live.mode === "stand" ? "Got it — swap in the next card" : live.mode === "lookup" ? "Show the next card" : "Got it — lift the card and place the next one");
     else if (ev === "cleared") { setHint(live.retry ? "Center the unread card and hold still" : "Next card"); }
     else if (ev === "tracking") setHint("Hold still…");
     // hover: no outline found, but the view is still and sharp -> take the guide area as the card
@@ -1235,6 +1295,36 @@ function liveLoop(t) {
   }
   live.tracks = live.tracks.filter(x => t - x.last < 1200);
   drawOverlay(null, null);
+}
+/* foil: a foil's rainbow shifts as the hand moves a little; a normal card's colours stay put. We watch a 6x8 grid of colour
+   averages over the last frames while the card is in view and score how much the hue drifts (weighted by colour strength). */
+function sheenSample(gctx, quad, s) {
+  const xs = quad.map(p => p.x * s), ys = quad.map(p => p.y * s); const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)));
+  const w = Math.min(gctx.canvas.width - x0, Math.ceil(Math.max(...xs)) - x0), h = Math.min(gctx.canvas.height - y0, Math.ceil(Math.max(...ys)) - y0); if (w < 12 || h < 16) return null;
+  const d = gctx.getImageData(x0, y0, w, h).data, g = new Float32Array(6 * 8 * 3); const cnt = new Float32Array(48);
+  for (let y = 0; y < h; y++) { const by = Math.min(7, (y * 8 / h) | 0); for (let x = 0; x < w; x++) { const bx = Math.min(5, (x * 6 / w) | 0), b = by * 6 + bx, p = (y * w + x) * 4; g[b * 3] += d[p]; g[b * 3 + 1] += d[p + 1]; g[b * 3 + 2] += d[p + 2]; cnt[b]++; } }
+  for (let b = 0; b < 48; b++) if (cnt[b]) { g[b * 3] /= cnt[b]; g[b * 3 + 1] /= cnt[b]; g[b * 3 + 2] /= cnt[b]; }
+  return { t: Date.now(), cx: (x0 + w / 2) / s, cy: (y0 + h / 2) / s, g };
+}
+function hueSat(r, g, b) { const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; const sat = mx ? d / mx : 0; let h = 0; if (d) { h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h = (h * 60 + 360) % 360; } return [h, sat, mx / 255]; }
+function sheenScore(samples) {                  // -> 0 (steady colours) … high (rainbow drifting between frames), or null if too few frames
+  if (!samples || samples.length < 4) return null; let total = 0, n = 0;
+  for (let b = 0; b < 48; b++) { let cs = 0, sn = 0, satSum = 0, k = 0;
+    for (const s of samples) { const [h, sat, v] = hueSat(s.g[b * 3], s.g[b * 3 + 1], s.g[b * 3 + 2]); if (sat < 0.08 || v < 0.25) continue; cs += Math.cos(h * Math.PI / 180); sn += Math.sin(h * Math.PI / 180); satSum += sat; k++; }
+    if (k < 3) continue; const R = Math.hypot(cs, sn) / k; total += (1 - R) * (satSum / k); n++; }
+  return n ? 1000 * total / Math.max(n, 12) : 0;
+}
+function sheenReset() { live.sheen = []; }
+function sheenPush(gctx, quad, s) { const smp = sheenSample(gctx, quad, s); if (!smp) return; const last = live.sheen[live.sheen.length - 1];
+  if (last && Math.hypot(last.cx - smp.cx, last.cy - smp.cy) > 0.25 * grab.width) live.sheen = []; live.sheen.push(smp); if (live.sheen.length > 12) live.sheen.shift(); }
+function foilDecide(score) {                    // -> {foil, sure, why} using the trained threshold
+  const f = settings.foil || {}; if (f.off || !f.thr || score == null) return { foil: null, sure: false, why: f.thr ? "not enough frames" : "not trained" };
+  const ratio = score / f.thr; if (ratio >= 1.6) return { foil: true, sure: true, score }; if (ratio <= 0.62) return { foil: false, sure: true, score };
+  return { foil: ratio >= 1, sure: false, score };
+}
+function foilCorrect(row, isFoil) {             // user corrected a guess: move the threshold a little towards the evidence
+  const f = settings.foil; if (!f || !f.thr || row.sheen == null) return;
+  if (isFoil && row.sheen < f.thr) f.thr = (f.thr * 2 + row.sheen) / 3; else if (!isFoil && row.sheen > f.thr) f.thr = (f.thr * 2 + row.sheen) / 3; saveSettings();
 }
 function frameMotion(gctx) {                 // mean absolute change between this frame and the last one (0..255), on a tiny grey copy
   const t = document.createElement("canvas"); t.width = 48; t.height = 27; t.getContext("2d").drawImage(gctx.canvas, 0, 0, 48, 27);
@@ -1284,6 +1374,19 @@ async function liveCapture(quad, track, retryItem, hover, manual) {
     let row;
     if (seen && seen.item.row) { row = Object.assign({}, seen.item.row, { id: newId(), ts: now(), qty: 1 }); if (row.unknown) { await cropStore.put(row.id, await cropStore.get(seen.item.row.id)); } }
     else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName });
+    if (!track && !$("liveFoil").checked && !row.unknown) {          // foil guess from the shimmer seen while hovering (single/stand/lookup)
+      const sc = sheenScore(live.sheen), fd = foilDecide(sc); row.sheen = sc;
+      if (fd.foil != null && fd.sure && fd.foil !== !!row.foil) { const c = row.scryfall_id ? await cardById(row.scryfall_id) : null; if (c) rowFromCard(row, c, fd.foil); else row.foil = fd.foil; row.list = pileFor(row, live.listName); }
+      if (fd.foil != null && !fd.sure) row.review = [row.review, `foil? shimmer ${Math.round(fd.score)} vs ${Math.round(settings.foil.thr)} — tap to confirm`].filter(Boolean).join("; ");
+    }
+    if (live.mode === "lookup" && !rescan) {         // look-up: report and drop
+      live.items = live.items.filter(i => i !== item); cropStore.del(row.id);
+      if (row.unknown) { sound.bad(); setHint("Couldn't identify that one"); speak("Couldn't identify that card", true); }
+      else { const owned = inventory.filter(r => !r.unknown && r.scryfall_id === row.scryfall_id); const n = owned.reduce((s, r) => s + qtyOf(r), 0); const lists = Array.from(new Set(owned.map(r => r.list))).join(", ");
+        const msg = n ? `${row.name}: you have ${n}${lists ? " in " + lists : ""}, ${dollars(row.price)}` : `${row.name}: not in your inventory, ${dollars(row.price)}`;
+        setHint(msg); sound.ok(); speak(msg, true); }
+      return;
+    }
     if (rescan) {                                 // replace the identity of an existing entry, keep its list / copies / notes
       const keep = { id: rescan.id, list: rescan.list, qty: rescan.qty, cond: rescan.cond, note: rescan.note, ts: rescan.ts };
       Object.keys(rescan).forEach(k => { if (!(k in keep)) delete rescan[k]; }); Object.assign(rescan, row, keep);
@@ -1298,10 +1401,12 @@ async function liveCapture(quad, track, retryItem, hover, manual) {
     if (twin) { twin.row.qty = qtyOf(twin.row) + 1; live.items = live.items.filter(i => i !== item); live.items = [twin, ...live.items.filter(i => i !== twin)]; item.row = twin.row; item.merged = true; saveInv(); if (track) { track.item = twin; track.status = rowStatus(twin.row); } }
     else { inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb; }
     const st = rowStatus(row); if (track && !twin) track.status = st;
-    if (twin) { sound.ok(); speak(`${row.name}, ${qtyOf(twin.row)} copies`, false); }
+    const pile = settings.sortAssist === "on" && !row.unknown && row.list !== live.listName ? row.list : (settings.sortAssist === "on" && !row.unknown ? (settings.bulkList || live.listName) : "");
+    if (twin) { sound.ok(); speak(`${row.name}, ${qtyOf(twin.row)} copies${pile ? ". " + pile : ""}`, !!pile); }
     else if (st === "unknown") { sound.bad(); speak(`Unknown card. Looks ${row.desc}, ${pos}. Tap it to fix.`, true); if (manual) openFix(row.id); }
-    else if (st === "hit") { sound.hit(); speak(`${row.name}, ${dollars(row.price)}${live.mode === "sweep" ? `, ${pos}` : ""}`, true); }
-    else { sound.ok(); speak(`${row.name}, ${dollars(row.price)}`, false); }
+    else if (st === "hit") { sound.hit(); speak(`${row.name}, ${dollars(row.price)}${live.mode === "sweep" ? `, ${pos}` : ""}${pile ? ". " + pile : ""}`, true); }
+    else { sound.ok(); speak(pile ? `${row.name}. ${pile}` : `${row.name}, ${dollars(row.price)}`, !!pile); }
+    if (!row.unknown) photoToDrive(row, crop);
     if (retryItem) live.retry = null;
     updateCount(); if (!$("pick").classList.contains("hidden")) renderPick();
   } catch (e) {
@@ -1400,10 +1505,20 @@ const trainSteps = () => {
     { title: "Focus", body: manual ? "Sweeping the focus range and keeping the sharpest setting… hold still." : "Move the phone slowly up or down until the bar below turns green and stays there. That's your scanning height.", btn: manual ? null : "This is my height", auto: manual ? async p => { const b = await focusSweep(p); if (b) settings.camera.focusDistance = b.d; } : null, meter: !manual },
     { title: "Light", body: "Checking brightness on the card…", auto: async () => { const ec = await exposureTune(); if (ec != null) settings.camera.exposureCompensation = ec; }, btn: null },
     { title: "Framing", body: "Zooming so one card fills about two thirds of the view…", auto: async () => { zoomTune.note = ""; const z = await zoomTune(); if (z != null) settings.camera.zoom = z; return zoomTune.note; }, btn: null },
+    { title: "Foil", body: "Put a <b>FOIL</b> card down. Hover over it as you normally would, moving the phone a little, for a few seconds…", auto: async p => { const sc = await sheenCollect(4000, p); settings.foil.foilScore = sc; }, btn: null },
+    { title: "Non-foil", body: "Now a <b>NON-foil</b> card, same way…", auto: async p => { const sc = await sheenCollect(4000, p); settings.foil.nonScore = sc; const f = settings.foil.foilScore, n = settings.foil.nonScore;
+        if (f != null && n != null && f > 1.6 * n) { settings.foil.thr = Math.sqrt(Math.max(f, 1) * Math.max(n, 0.5)); settings.foil.off = false; return `Foil shimmer ${Math.round(f)} vs non-foil ${Math.round(n)} — that's a clear gap, foil guessing is on.`; }
+        settings.foil.thr = null; return `Foil ${f == null ? "?" : Math.round(f)} vs non-foil ${n == null ? "?" : Math.round(n)} — too close to tell apart in this light, so foil stays a checkbox. More side light and a slight tilt while hovering usually separates them.`; }, btn: null },
     { title: "Check", body: "Keep the phone where it is. The bar shows sharpness — green means the reader will get clean text. Lift the card away and put it back once; it should snap within a second.", btn: "Looks good", meter: true },
     { title: "Done", body: "Saved. These settings load every time you open the camera. If you change table, light or height, run <b>Train camera</b> again from the Camera panel.", btn: "Scan" },
   ];
 };
+async function sheenCollect(ms, progress) {   // hover over a card for a few seconds; returns the median shimmer score seen
+  const t0 = Date.now(), scores = []; sheenReset(); const s = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight)); const gctx = grab.getContext("2d");
+  while (Date.now() - t0 < ms) { await sleep(120); gctx.drawImage(video, 0, 0, grab.width, grab.height); let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) {}
+    if (quad) sheenPush(gctx, quad.map(p => ({ x: p.x / s, y: p.y / s })), s); const sc = sheenScore(live.sheen); if (sc != null) scores.push(sc); if (progress) progress((Date.now() - t0) / ms); }
+  if (!scores.length) return null; scores.sort((a, b) => a - b); return scores[Math.floor(scores.length / 2)];
+}
 async function trainShow() {
   const steps = trainSteps(), s = steps[train.step]; if (!s) return trainEnd();
   $("trainTitle").textContent = s.title; $("trainStep").textContent = `step ${train.step + 1} of ${steps.length}`; $("trainBody").innerHTML = s.body; $("trainBar").style.width = "0%"; $("train").classList.remove("hidden");
@@ -1491,6 +1606,11 @@ $("groupBy").onchange = () => { if (!$("invList").classList.contains("hidden")) 
 $("stack").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
 $("search").oninput = () => { $("invList").classList.remove("hidden"); $("btnShowInv").textContent = "Hide"; renderInvList(); };
 $("btnSummary").onclick = () => { const s = $("summary"); s.classList.toggle("hidden"); if (!s.classList.contains("hidden")) renderSummary(); };
+function extrasHtml() {
+  const ex = extrasRows(); if (!ex.length) return `<div class="grp"><span>Extras (beyond ${settings.playset} copies)</span><span class="mono">none</span></div>`;
+  const val = ex.reduce((s, r) => s + (r.price || 0) * r.extra, 0);
+  return `<div class="grp"><span>Extras (beyond ${settings.playset} copies)</span><span class="mono">${ex.reduce((s, r) => s + r.extra, 0)} · $${val.toFixed(2)}</span></div>` + ex.slice(0, 15).map(r => `<div class="tot"><span>${esc(r.name)} <span class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}</span></span><span class="mono">${r.extra} extra · $${((r.price || 0) * r.extra).toFixed(2)}</span></div>`).join("") + `<div class="small" style="margin-top:4px">Export → "TCGplayer mass-entry list (extras only)" gives a paste-ready list of these.</div>`;
+}
 function renderSummary() {
   const rows = inventory.filter(r => !r.unknown), unk = inventory.length - rows.length;
   const total = rows.reduce((a, r) => a + (r.price || 0) * qtyOf(r), 0), adj = rows.reduce((a, r) => a + (r.price || 0) * (COND[r.cond] || 1) * qtyOf(r), 0);
@@ -1507,7 +1627,7 @@ function renderSummary() {
   $("summary").innerHTML = `<div class="grp"><span>Totals</span><span class="mono">${inventory.length} cards</span></div>
     <div class="sub">Market value $${total.toFixed(2)}${Math.abs(adj - total) >= 0.01 ? ` · $${adj.toFixed(2)} after condition` : ""} · ${tiers.hits.length} at $${fmtThr()}+ ($${tiers.hits.reduce((a, r) => a + r.price, 0).toFixed(2)}) · ${tiers.mid.length} between 25¢ and $${fmtThr()} · ${tiers.bulk.length} bulk · ${foils} foil · ${sets} sets${unk ? ` · <span style="color:#ff7b7b">${unk} unknown</span>` : ""}</div>
     <div class="grp"><span>By list</span><span></span></div>` + Array.from(byList.entries()).sort((a, b) => b[1].v - a[1].v).map(([k, v]) => `<div class="tot"><span>${esc(k)}</span><span class="mono">${v.n} · $${v.v.toFixed(2)}</span></div>`).join("") +
-    completion + `<div class="grp"><span>Top 10</span><span></span></div>` + top.map(r => cardHtml(r)).join("");
+    completion + extrasHtml() + `<div class="grp"><span>Top 10</span><span></span></div>` + top.map(r => cardHtml(r)).join("");
 }
 $("btnShowInv").onclick = () => { const l = $("invList"); l.classList.toggle("hidden"); $("btnShowInv").textContent = l.classList.contains("hidden") ? "Show all" : "Hide"; if (!l.classList.contains("hidden")) renderInvList(); };
 $("btnClear").onclick = () => { if (confirm("Delete the whole inventory on this phone? Export first if you need it.")) { inventory = []; saveInv(); renderInvTotals(); renderInvList(); $("results").classList.add("hidden"); $("hits").classList.add("hidden"); } };
@@ -1518,7 +1638,7 @@ refreshListSelects(); renderInvTotals();
 /* ================= export ================= */
 const COLS = [["list", "List"], ["qty", "Qty"], ["name", "Card"], ["set", "Set"], ["set_name", "Set name"], ["number", "#"], ["variant", "Variant"], ["rarity", "Rarity"], ["foil", "Foil"], ["cond", "Condition"], ["price", "TCG market ($)"], ["adj", "Adjusted ($)"], ["price_at_scan", "Price at scan ($)"], ["eur", "Cardmarket (€)"], ["flag", "Flag"], ["tier", "Price tier"], ["color", "Color"], ["type", "Type"], ["mv", "Mana value"], ["artist", "Artist"], ["released", "Released"], ["lang", "Lang"], ["review", "Review"], ["notes", "Notes"], ["note", "My note"], ["name_read", "Name as read"], ["via", "Identified by"], ["photo", "Source"], ["ts", "Scanned"], ["uri", "Scryfall"], ["image", "Image"], ["oracle_text", "Oracle text"]];
 function exportRows(rows) { return (rows || inventory).slice().sort((a, b) => (b.price || -1) - (a.price || -1)).map(withDetails).map(r => { const o = {}; COLS.forEach(([k, h]) => { o[h] = k === "flag" ? (flagged(r) ? "YES" : "") : k === "foil" ? (r.foil ? "yes" : "no") : k === "tier" ? tierOf(r) : k === "list" ? (r.list || "Unsorted") : k === "adj" ? (r.price == null ? "" : Math.round(r.price * (COND[r.cond] || 1) * 100) / 100) : k === "qty" ? qtyOf(r) : (r[k] == null ? "" : r[k]); }); return o; }); }
-function download(name, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+function download(name, blob) { exportToDrive(name, blob, blob.type); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
 const CONDS_LONG = { NM: "near_mint", LP: "lightly_played", MP: "moderately_played", HP: "heavily_played", DMG: "damaged" };
 const CONDS_DECKBOX = { NM: "Near Mint", LP: "Lightly Played", MP: "Played", HP: "Heavily Played", DMG: "Poor" };
 function stacked() {                        // identical printing + finish + condition + list -> one line with a quantity
@@ -1527,7 +1647,13 @@ function stacked() {                        // identical printing + finish + con
   return Array.from(m.values()).sort((a, b) => (b.price || -1) - (a.price || -1));
 }
 const csvOf = (hdr, lines) => [hdr, ...lines].map(l => l.map(v => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`).join(",")).join("\n");
+function extrasRows() {                        // copies beyond the playset, per printing+finish
+  const m = new Map(); inventory.filter(r => !r.unknown && r.scryfall_id).forEach(r => { const k = r.scryfall_id + (r.foil ? "f" : "n"); if (!m.has(k)) m.set(k, Object.assign({}, r, { qty: 0 })); m.get(k).qty += qtyOf(r); });
+  return Array.from(m.values()).map(r => Object.assign(r, { extra: r.qty - settings.playset })).filter(r => r.extra > 0).sort((a, b) => (b.price || 0) * b.extra - (a.price || 0) * a.extra);
+}
+function tcgMassEntry(rows) { const m = new Map(); rows.forEach(r => { const k = `${(r.name || "").split(" // ")[0]} [${(r.set || "").toUpperCase()}]`; m.set(k, (m.get(k) || 0) + (r.qty || 1)); }); return Array.from(m.entries()).map(([k, q]) => `${q} ${k}`).join("\n"); }
 function exportExternal(fmt) {
+  if (fmt === "tcgmass" || fmt === "tcgextras") { const rows = fmt === "tcgmass" ? stacked() : extrasRows().map(r => Object.assign({}, r, { qty: r.extra })); if (!rows.length) { setStatus("Nothing to export.", true); return; } download(fmt === "tcgmass" ? "tcgplayer-list.txt" : "tcgplayer-extras.txt", new Blob([tcgMassEntry(rows)], { type: "text/plain" })); return; }
   const rows = stacked(); let csv, name;
   if (fmt === "manabox") { name = "manabox-import.csv";
     csv = csvOf(["Name", "Set code", "Set name", "Collector number", "Foil", "Rarity", "Quantity", "ManaBox ID", "Scryfall ID", "Purchase price", "Misprint", "Altered", "Condition", "Language", "Purchase price currency"],
@@ -1597,6 +1723,81 @@ function exportXlsx() {
   allLists().forEach(l => { const rows = inventory.filter(r => (r.list || "Unsorted") === l); if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows(rows)), l.replace(/[\\\/?*\[\]:]/g, "-").slice(0, 31)); });
   XLSX.writeFile(wb, "inventory.xlsx");
 };
+
+/* ================= Google Drive: organized backups, exports and card photos ================= */
+const gdrive = { token: null, exp: 0, client: null, folders: {}, busy: false };
+function driveStat(t) { $("driveStat").textContent = t; }
+async function gisLoad() { if (window.google && google.accounts) return; await tagScript("https://accounts.google.com/gsi/client"); }
+async function driveToken(interactive) {
+  if (gdrive.token && Date.now() < gdrive.exp - 60000) return gdrive.token;
+  if (!settings.gClientId) throw new Error("no Google client ID in Settings");
+  await gisLoad();
+  return new Promise((res, rej) => {
+    try {
+      const tc = google.accounts.oauth2.initTokenClient({ client_id: settings.gClientId, scope: "https://www.googleapis.com/auth/drive.file", callback: r => { if (r && r.access_token) { gdrive.token = r.access_token; gdrive.exp = Date.now() + (r.expires_in || 3600) * 1000; settings.drive.connected = true; saveSettings(); res(gdrive.token); } else rej(new Error((r && r.error) || "no token")); }, error_callback: e => rej(new Error(e && e.type || "sign-in failed")) });
+      tc.requestAccessToken({ prompt: interactive ? "consent" : "" });
+    } catch (e) { rej(e); }
+  });
+}
+async function dget(url, opts) { const tok = await driveToken(false); opts = Object.assign({}, opts || {}); opts.headers = Object.assign({ Authorization: "Bearer " + tok }, opts.headers || {}); const r = await fetch(url, opts); if (r.status === 401) { gdrive.token = null; throw new Error("Google sign-in expired — tap Connect Google Drive"); } return r; }
+async function driveFolder(name, parent) {                         // find or create, cached
+  const key = (parent || "root") + "/" + name; if (gdrive.folders[key]) return gdrive.folders[key];
+  const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parent || "root"}' in parents`;
+  const r = await dget(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`); const j = await r.json();
+  let id = j.files && j.files[0] && j.files[0].id;
+  if (!id) { const c = await dget("https://www.googleapis.com/drive/v3/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parent || "root"] }) }); id = (await c.json()).id; }
+  gdrive.folders[key] = id; return id;
+}
+async function drivePath(parts) { let p = null; for (const n of parts) p = await driveFolder(n, p); return p; }
+async function driveFind(name, parent) { const q = `name='${name.replace(/'/g, "\\'")}' and trashed=false and '${parent}' in parents`; const r = await dget(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)`); const j = await r.json(); return j.files && j.files[0]; }
+async function drivePut(name, parent, blob, mime) {                 // create or overwrite by name
+  const existing = await driveFind(name, parent);
+  const meta = new Blob([JSON.stringify(existing ? { name } : { name, parents: [parent] })], { type: "application/json" });
+  const body = new FormData(); body.append("metadata", meta); body.append("file", new Blob([blob], { type: mime }), name);
+  const url = existing ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart` : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
+  const r = await dget(url, { method: existing ? "PATCH" : "POST", body }); if (!r.ok) throw new Error(`Drive upload failed (${r.status})`); return r.json();
+}
+function backupData() { return { app: "cardscan", version: 1, saved: new Date().toISOString(), settings: Object.assign({}, settings, { apiKey: "", drive: {} }), inventory, learned }; }
+async function driveBackup(kind) {
+  if (gdrive.busy) return; gdrive.busy = true;
+  try { driveStat("backing up…"); const folder = await drivePath(["cardscan", "Backups"]); const json = JSON.stringify(backupData());
+    await drivePut("latest.json", folder, json, "application/json"); await drivePut(`cardscan-backup-${today()}.json`, folder, json, "application/json");
+    settings.drive.lastBackup = new Date().toISOString(); saveSettings(); driveStat(`backed up ${new Date().toLocaleString()} (${inventory.length} cards)`); }
+  catch (e) { driveStat("backup failed — " + (e.message || e)); } finally { gdrive.busy = false; }
+}
+async function driveAutoBackup(reason) {
+  if (settings.driveAuto === false || !settings.gClientId || !settings.drive.connected) return;
+  if (reason === "daily" && settings.drive.lastBackup && Date.now() - Date.parse(settings.drive.lastBackup) < 20 * 3600 * 1000) return;
+  try { await driveBackup(reason); } catch (e) {}
+}
+async function driveRestore() {
+  try { driveStat("looking for latest.json…"); const folder = await drivePath(["cardscan", "Backups"]); const f = await driveFind("latest.json", folder); if (!f) throw new Error("no backup in Drive yet");
+    const r = await dget(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`); const data = await r.json();
+    if (data.app !== "cardscan") throw new Error("not a cardscan backup");
+    const mode = inventory.length ? (confirm(`Drive backup has ${data.inventory.length} cards (${f.modifiedTime.slice(0, 16).replace("T", " ")}). OK = merge, Cancel = replace everything on this phone.`) ? "merge" : "replace") : "replace";
+    const ids = new Set(inventory.map(r => r.id)); const add = data.inventory.filter(r => mode === "replace" || !ids.has(r.id));
+    inventory = mode === "replace" ? data.inventory : inventory.concat(add); inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
+    if (data.learned) { learned = Object.assign(mode === "replace" ? {} : learned, data.learned); localStorage.setItem(LEARNED_KEY, JSON.stringify(learned)); }
+    saveInv(); refreshListSelects(); renderInvTotals(); renderCoverage(); driveStat(`restored ${mode === "replace" ? data.inventory.length : add.length} cards`); setStatus(`Restored from Drive.`); }
+  catch (e) { driveStat("restore failed — " + (e.message || e)); }
+}
+async function exportToDrive(name, blob, mime) { if (!settings.drive.connected || !settings.gClientId) return false; try { const folder = await drivePath(["cardscan", "Exports"]); await drivePut(name, folder, blob, mime); setStatus(`Saved to Drive: cardscan/Exports/${name}`); return true; } catch (e) { setStatus("Drive: " + (e.message || e), true); return false; } }
+const photoQueue = []; let photoBusy = false;
+function photoToDrive(row, cropCanvas) {                           // picture of a valuable card -> cardscan/Photos/<A-Z>/<Name – SET #n – finish – $price – date>.jpg (nothing kept on the phone)
+  if (!settings.photoMin || row.price == null || row.price < settings.photoMin || !settings.drive.connected || !settings.gClientId) return;
+  const safe = s => String(s).replace(/[\\/:*?"<>|]/g, "-");
+  const letter = (row.name || "?").replace(/^(the|a|an) /i, "").charAt(0).toUpperCase(); const folderName = /[A-Z]/.test(letter) ? letter : "#";
+  const fname = `${safe(row.name)} – ${row.set} #${safe(row.number)} – ${row.foil ? "foil" : "nonfoil"} – $${row.price.toFixed(2)} – ${today()}.jpg`;
+  photoQueue.push({ folderName, fname, dataUrl: cropCanvas.toDataURL("image/jpeg", 0.85) }); drainPhotos();
+}
+async function drainPhotos() {
+  if (photoBusy) return; photoBusy = true;
+  try { while (photoQueue.length) { const p = photoQueue[0]; try { const folder = await drivePath(["cardscan", "Photos", p.folderName]); const bin = atob(p.dataUrl.split(",")[1]); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); await drivePut(p.fname, folder, bytes, "image/jpeg"); photoQueue.shift(); } catch (e) { console.warn("photo upload", e); break; } } }
+  finally { photoBusy = false; }
+}
+$("btnDriveConnect").onclick = async () => { try { await driveToken(true); driveStat("connected"); await driveBackup("connect"); } catch (e) { driveStat("could not connect — " + (e.message || e)); } };
+$("btnDriveRestore").onclick = driveRestore;
+setTimeout(() => driveAutoBackup("daily"), 8000);
 
 /* ================= database buttons, repricing ================= */
 $("btnDb").onclick = async () => { $("dbStat").textContent = "Downloading…"; await loadDb(true); if (db.loaded) await repriceAll(); };
@@ -1672,14 +1873,14 @@ async function renderDetails() {
   $("fixImg").src = r.image || imageUrl(r.scryfall_id) || ""; $("fixImg").alt = r.name || "";
   const kv = [["Set", `${r.set} #${r.number}${r.set_name ? " · " + r.set_name : ""}`], ["Rarity / finish", `${r.rarity || "?"}${r.foil ? " · foil" : ""}${r.variant ? " · " + r.variant : ""}`],
     ["Price", `${money(r.price)} TCGplayer market${r.eur != null ? ` · €${Number(r.eur).toFixed(2)} Cardmarket` : ""}${r.price_at_scan != null && r.price != null && r.price !== r.price_at_scan ? ` · was ${money(r.price_at_scan)} at scan` : ""}`],
-    ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? `by fingerprint (offline${r.dist != null ? `, match ${Math.max(0, Math.round(100 - r.dist / 2.56))}%` : ""})` : r.via === "ocr" ? `by reading the card text on the phone${r.name_read ? ` ("${r.name_read}")` : ""}` : r.via === "claude" ? "by Claude vision" : r.via === "manual" ? "by you" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
+    ["Foil guess", r.sheen != null && settings.foil && settings.foil.thr ? `shimmer ${Math.round(r.sheen)} (threshold ${Math.round(settings.foil.thr)})` : ""], ["Type", r.type_line], ["Artist", r.artist ? `${r.artist}${r.released ? " · " + r.released : ""}` : ""], ["Identified", r.via === "fingerprint" ? `by fingerprint (offline${r.dist != null ? `, match ${Math.max(0, Math.round(100 - r.dist / 2.56))}%` : ""})` : r.via === "ocr" ? `by reading the card text on the phone${r.name_read ? ` ("${r.name_read}")` : ""}` : r.via === "claude" ? "by Claude vision" : r.via === "manual" ? "by you" : ""], ["Scryfall", r.uri ? `<a href="${esc(r.uri)}" target="_blank" rel="noopener">open</a>` : ""]];
   $("fixKv").innerHTML = kv.filter(([, v]) => v).map(([k, v]) => `<div><b>${esc(k)}:</b> ${k === "Scryfall" ? v : esc(v)}</div>`).join("");
   $("fixOracle").textContent = r.oracle_text || "";
 }
 function closeFix() { $("sheet").classList.remove("open"); if (fixRow && fixRow.unknown && fixRow.photo === "typed") { inventory = inventory.filter(r => r !== fixRow); lastScanIds = lastScanIds.filter(i => i !== fixRow.id); saveInv(); rerenderScan(); renderInvTotals(); } fixRow = null; if (live.pausedBySheet) { live.paused = false; live.pausedBySheet = false; if (live.tracker) live.tracker.reset(); } }
 $("sheet").addEventListener("click", e => { if (e.target === $("sheet")) closeFix(); });
 $("fixList").onchange = () => handleNewList($("fixList"), fixRow ? fixRow.list : "Unsorted");
-$("fixDone").onclick = async () => { const row = fixRow; closeFix(); if (!row) return; row.foil = $("fixFoil").checked; row.cond = $("fixCond").value; row.note = $("fixNote").value.trim();
+$("fixDone").onclick = async () => { const row = fixRow; closeFix(); if (!row) return; if (!!row.foil !== $("fixFoil").checked) { foilCorrect(row, $("fixFoil").checked); row.review = (row.review || "").replace(/;?\s*foil\?[^;]*/, "").trim(); } row.foil = $("fixFoil").checked; row.cond = $("fixCond").value; row.note = $("fixNote").value.trim();
   const l = $("fixList").value; if (l && l !== NEW_LIST) row.list = l; if (row.scryfall_id && !row.unknown) { const c = await cardById(row.scryfall_id); if (c) rowFromCard(row, c, row.foil); } saveInv(); refreshListSelects(); rerenderScan(); renderInvTotals(); };
 $("fixDelete").onclick = () => { if (fixRow && confirm(`Delete "${fixRow.name}"?`)) { cropStore.del(fixRow.id); inventory = inventory.filter(r => r !== fixRow); saveInv(); rerenderScan(); renderInvTotals(); } closeFix(); };
 $("fixName").oninput = () => { clearTimeout(fixTimer); const q = $("fixName").value.trim(); if (q.length < 2) return; fixTimer = setTimeout(async () => { const names = await nameSuggestions(q); $("fixNames").innerHTML = names.slice(0, 12).map(n => `<div class="opt" data-name="${esc(n)}">${esc(n)}</div>`).join(""); $("fixNames").classList.toggle("hidden", !names.length); }, 250); };
