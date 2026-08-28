@@ -532,9 +532,12 @@ async function fetchGz(url, force) {
   else text = new TextDecoder().decode(buf);                                     // served already unzipped (some hosts do that)
   try { return JSON.parse(text); } catch (e) { throw new Error(`${url}: not readable (${text.slice(0, 40).replace(/\s+/g, " ")}…)`); }
 }
+async function fetchEither(names, force) {          // the file may have lost its .gz on the way to the host
+  let err = null; for (const n of names) { try { return await fetchGz(n, force); } catch (e) { err = err || e; } } throw err;
+}
 async function loadDb(force) {
   try {
-    const j = await fetchGz("cards.json.gz", force);
+    const j = await fetchEither(["cards.json.gz", "cards.json"], force);
     db.cards = j.cards; db.oracle = j.oracle; db.sets = j.sets || {}; db.built = j.built || "";
     db.byKey = new Map(); db.byName = new Map(); db.byId = new Map();
     j.cards.forEach((c, i) => {
@@ -548,7 +551,7 @@ async function loadDb(force) {
     $("dbStat").textContent = `Prices: ${db.cards.length.toLocaleString()} printings, built ${db.built}`;
   } catch (e) { db.loaded = false; $("dbStat").textContent = "Prices: not loaded — " + (e.message || e) + " (using Scryfall live)"; }
   try {
-    const h = await fetchGz("hashes.json.gz", force);
+    const h = await fetchEither(["hashes.json.gz", "hashes.json"], force);
     const ids = Object.keys(h.h || {}); db.hashIds = ids; db.hashBuilt = h.built || "";
     db.hashes = new Uint32Array(ids.length * 16);
     ids.forEach((id, k) => { const hex = h.h[id]; for (let w = 0; w < 16; w++) db.hashes[k * 16 + w] = parseInt(hex.slice(w * 8, w * 8 + 8), 16) >>> 0; });
