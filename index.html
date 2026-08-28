@@ -131,7 +131,8 @@ button:focus-visible,input:focus-visible,.card:focus-visible{outline:2px solid v
   <div class="row"><input type="search" id="search" placeholder="Search name, set, list…" style="flex:1"></div>
   <div class="row"><span class="sub">Group by</span><select id="groupBy" style="flex:1;width:auto">
     <option value="list">List</option><option value="tier">Price tier</option><option value="color">Color</option>
-    <option value="type">Card type</option><option value="rarity">Rarity</option><option value="set">Set</option><option value="cond">Condition</option></select></div>
+    <option value="type">Card type</option><option value="rarity">Rarity</option><option value="set">Set</option><option value="cond">Condition</option></select>
+    <label class="chk"><input type="checkbox" id="stack" checked> stack copies</label></div>
   <div class="row">
     <button class="ghost" id="btnShowInv" type="button">Show all</button>
     <button class="ghost" id="btnSummary" type="button">Summary</button>
@@ -450,7 +451,18 @@ const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
 let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
 inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
-const saveInv = () => localStorage.setItem(INV_KEY, JSON.stringify(inventory));
+const HEAVY = ["oracle_text", "type_line", "mana_cost", "image", "uri"];     // derivable from the card id; not stored, so thousands of cards fit
+let storageWarned = false;
+function saveInv() {
+  try { localStorage.setItem(INV_KEY, JSON.stringify(inventory.map(r => { const o = Object.assign({}, r); HEAVY.forEach(k => delete o[k]); return o; }))); }
+  catch (e) { if (!storageWarned) { storageWarned = true; setStatus("The phone's storage for this app is full — save a Backup file, then delete or clear cards.", true); } }
+}
+function withDetails(r) {                       // fill the derivable fields back in from the database when needed
+  if (r.oracle_text == null && r.scryfall_id && db.loaded && db.byId.has(r.scryfall_id)) { const c = dbCard(db.byId.get(r.scryfall_id)); r.oracle_text = c.oracle_text; r.type_line = c.type_line; r.mana_cost = c.mana_cost; }
+  if (!r.image && r.scryfall_id) r.image = imageUrl(r.scryfall_id);
+  if (!r.uri && r.set && r.number) r.uri = `https://scryfall.com/card/${r.set.toLowerCase()}/${encodeURIComponent(r.number)}`;
+  return r;
+}
 const saveSettings = () => localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -509,12 +521,16 @@ async function fetchGz(url, force) {
   const hasCache = typeof caches !== "undefined";
   try { if (hasCache && !force) resp = await (await caches.open("cardscan-db")).match(url); } catch (e) {}
   if (!resp) {
-    resp = await fetch(url, { cache: force ? "reload" : "default" });
-    if (!resp.ok) throw new Error(`${url}: ${resp.status}`);
+    try { resp = await fetch(url, { cache: force ? "reload" : "default" }); } catch (e) { throw new Error(`${url}: no connection`); }
+    if (!resp.ok) throw new Error(`${url}: HTTP ${resp.status}${resp.status === 404 ? " (file not found next to index.html)" : ""}`);
     try { if (hasCache) await (await caches.open("cardscan-db")).put(url, resp.clone()); } catch (e) {}
   }
   const buf = new Uint8Array(await resp.arrayBuffer());
-  return JSON.parse(new TextDecoder().decode(window.pako ? window.pako.ungzip(buf) : buf));
+  if (!buf.length) throw new Error(`${url}: empty file`);
+  let text;
+  if (buf[0] === 0x1f && buf[1] === 0x8b) { if (!window.pako) throw new Error("unzip library did not load"); text = new TextDecoder().decode(window.pako.ungzip(buf)); }
+  else text = new TextDecoder().decode(buf);                                     // served already unzipped (some hosts do that)
+  try { return JSON.parse(text); } catch (e) { throw new Error(`${url}: not readable (${text.slice(0, 40).replace(/\s+/g, " ")}…)`); }
 }
 async function loadDb(force) {
   try {
@@ -530,14 +546,14 @@ async function loadDb(force) {
     });
     db.names = Array.from(db.byName.keys()); db.loaded = true;
     $("dbStat").textContent = `Prices: ${db.cards.length.toLocaleString()} printings, built ${db.built}`;
-  } catch (e) { db.loaded = false; $("dbStat").textContent = "Prices: no cards.json.gz found (using Scryfall live)"; }
+  } catch (e) { db.loaded = false; $("dbStat").textContent = "Prices: not loaded — " + (e.message || e) + " (using Scryfall live)"; }
   try {
     const h = await fetchGz("hashes.json.gz", force);
     const ids = Object.keys(h.h || {}); db.hashIds = ids; db.hashBuilt = h.built || "";
     db.hashes = new Uint32Array(ids.length * 16);
     ids.forEach((id, k) => { const hex = h.h[id]; for (let w = 0; w < 16; w++) db.hashes[k * 16 + w] = parseInt(hex.slice(w * 8, w * 8 + 8), 16) >>> 0; });
     $("hashStat").textContent = `Fingerprints: ${ids.length.toLocaleString()} cards`;
-  } catch (e) { db.hashes = null; $("hashStat").textContent = "Fingerprints: none yet"; }
+  } catch (e) { db.hashes = null; $("hashStat").textContent = "Fingerprints: not loaded — " + (e.message || e); }
   renderCoverage();
 }
 function renderCoverage() {
@@ -795,9 +811,27 @@ async function aiIdentify(row) {                  // Claude reads the stored cro
   if (!row.review) cropStore.del(row.id);
   return row;
 }
+function cropVariant(c, zoom, rotate) {          // same card, slightly tighter crop and/or turned 180°
+  const o = document.createElement("canvas"); o.width = c.width; o.height = c.height; const g = o.getContext("2d");
+  if (rotate) { g.translate(c.width, c.height); g.rotate(Math.PI); }
+  const w = Math.round(c.width * zoom), h = Math.round(c.height * zoom);
+  g.drawImage(c, Math.round((c.width - w) / 2), Math.round((c.height - h) / 2), w, h, 0, 0, c.width, c.height);
+  return o;
+}
+function matchCrop(cropCanvas) {                  // -> { hash, m: {id, dist, second} | null, how }
+  const hash = hashCard(cropCanvas); let m = hashKnown(hash); if (m) return { hash, m, how: "" };
+  const tries = [[1, true, 0, "rotated"], [0.96, false, 10, "tighter"], [0.92, false, 10, "tighter"], [0.96, true, 10, "rotated"]];
+  for (const [zoom, rot, penalty, how] of tries) {
+    try { const h2 = hashCard(cropVariant(cropCanvas, zoom, rot)); const k = nearestHash(h2);
+      if (k.id && k.dist <= acceptDist() - penalty && (k.second - k.dist) >= HASH_MARGIN) return { hash: h2, m: k, how }; } catch (e) {}
+  }
+  return { hash, m: null, how: "" };
+}
 async function identifyCrop(cropCanvas, opts) {
-  const hash = hashCard(cropCanvas), m = hashKnown(hash);
-  if (m) { const row = await knownRow(m, hash, opts); if (row) { row.dist = m.dist; return row; } }
+  const { hash, m, how } = matchCrop(cropCanvas);
+  if (m) { const row = await knownRow(m, hash, opts); if (row) { row.dist = m.dist; if (how) row.notes = [row.notes, `matched ${how}`].filter(Boolean).join("; ");
+      if (m.dist <= acceptDist() - 10 && !learned[hash]) learn(hash, m.id);      // remember this phone's own picture of the card: next time it matches even closer
+      return row; } }
   const row = await unknownRow(cropCanvas, hash, opts);
   if (settings.aiMode === "auto" && settings.apiKey) { try { await aiIdentify(row); } catch (e) { row.review = "AI could not read it: " + (e.message || e); } }
   return row;
@@ -1076,7 +1110,7 @@ function renderLiveLast() {
     if (i.status === "unread") return `<div class="li unread" data-k="${k}"><img src="${i.thumb}" alt=""><div><div class="n">Not read — ${esc(i.desc || "")}, ${esc(i.pos || "")}</div><div class="sub">${esc(i.error)} · tap to retry</div></div><div></div></div>`;
     const r = i.row;
     if (r.unknown) return `<div class="li unknown" data-row="${r.id}"><img src="${i.thumb}" alt=""><div><div class="n">Unknown card — ${esc(r.desc || "")}</div><div class="sub">tap to pick a match or ask AI</div></div><div></div></div>`;
-    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[rowStatus(r)]};padding-left:8px"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? " · instant" : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
+    return `<div class="li" data-row="${r.id}" style="border-left:3px solid ${STATUS_COLOR[rowStatus(r)]};padding-left:8px"><img src="${i.thumb}" alt=""><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""} · ${esc(r.list)}${r.via === "fingerprint" ? ` · instant${r.dist != null ? " " + Math.max(0, Math.round(100 - r.dist / 2.56)) + "%" : ""}` : ""}${r.review ? " · check" : ""}</div></div><div class="price">${money(r.price)}</div></div>`;
   }).join("");
 }
 $("liveLast").addEventListener("click", e => {
@@ -1125,10 +1159,10 @@ $("tuneAuto").onclick = async () => {
 };
 
 /* ================= rendering ================= */
-function cardHtml(r) {
-  const st = rowStatus(r);
+function cardHtml(r, qty) {
+  const st = rowStatus(r), badge = qty > 1 ? `<span class="mono" style="color:var(--gold)"> ×${qty}</span>` : "";
   if (r.unknown) return `<div class="card s-unknown" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div><div class="n">Unknown card${r.desc ? " — " + esc(r.desc) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.foil ? " · foil" : ""} · tap to pick a match or ask AI</div>${r.review && !/not identified/.test(r.review) ? `<div class="rev">${esc(r.review)}</div>` : ""}</div><div class="price">—</div></div>`;
-  return `<div class="card s-${st}" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div><div class="n">${esc(r.name)}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}${r.variant ? " · " + esc(r.variant) : ""}${r.set_name ? " · " + esc(r.set_name) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.cond && r.cond !== "NM" ? " · " + esc(r.cond) : ""}${r.color ? " · " + esc(r.color) : ""}${r.type ? " · " + esc(r.type) : ""}${r.rarity ? " · " + esc(r.rarity) : ""}</div>${r.review ? `<div class="rev">check: ${esc(r.review)}</div>` : ""}</div><div class="price">${money(r.price)}${r.price_at_scan != null && r.price != null && Math.abs(r.price - r.price_at_scan) >= 0.01 ? `<div class="sub">${r.price > r.price_at_scan ? "▲" : "▼"} was ${money(r.price_at_scan)}</div>` : ""}</div></div>`;
+  return `<div class="card s-${st}" data-id="${r.id}" tabindex="0" role="button"><div class="dot"></div><div><div class="n">${esc(r.name)}${badge}</div><div class="sub mono">${esc(r.set)} #${esc(r.number)}${r.foil ? " · foil" : ""}${r.variant ? " · " + esc(r.variant) : ""}${r.set_name ? " · " + esc(r.set_name) : ""}</div><div class="sub">${esc(r.list || "Unsorted")}${r.cond && r.cond !== "NM" ? " · " + esc(r.cond) : ""}${r.color ? " · " + esc(r.color) : ""}${r.type ? " · " + esc(r.type) : ""}${r.rarity ? " · " + esc(r.rarity) : ""}</div>${r.review ? `<div class="rev">check: ${esc(r.review)}</div>` : ""}</div><div class="price">${money(r.price)}${r.price_at_scan != null && r.price != null && Math.abs(r.price - r.price_at_scan) >= 0.01 ? `<div class="sub">${r.price > r.price_at_scan ? "▲" : "▼"} was ${money(r.price_at_scan)}</div>` : ""}</div></div>`;
 }
 let lastScanIds = [];
 function renderScan(rows) {
@@ -1168,10 +1202,14 @@ function renderInvList() {
   const by = $("groupBy").value, q = $("search").value.trim().toLowerCase(), groups = new Map();
   inventory.filter(r => !q || `${r.name} ${r.set} ${r.set_name} ${r.list} ${r.variant} ${r.type} ${r.color}`.toLowerCase().includes(q)).forEach(r => { const k = groupKey(r, by); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
   const keys = groupOrder(Array.from(groups.keys()), by);
+  const stack = $("stack").checked;
   $("invList").innerHTML = keys.map(k => { const rows = groups.get(k).sort((a, b) => (b.price || -1) - (a.price || -1)); const total = rows.reduce((s, r) => s + (r.price || 0), 0);
-    return `<div class="grp"><span>${esc(k)}</span><span class="mono">${rows.length} · $${total.toFixed(2)}</span></div>` + rows.map(cardHtml).join(""); }).join("") || `<div class="empty">${q ? "No matches." : "Nothing scanned yet."}</div>`;
+    let lines = rows.map(r => [r, 1]);
+    if (stack) { const seen = new Map(); lines = []; rows.forEach(r => { const key = r.unknown ? r.id : [r.scryfall_id || r.name, r.foil ? "f" : "n", r.cond || "NM"].join("|"); if (seen.has(key)) seen.get(key)[1]++; else { const l = [r, 1]; seen.set(key, l); lines.push(l); } }); }
+    return `<div class="grp"><span>${esc(k)}</span><span class="mono">${rows.length} · $${total.toFixed(2)}</span></div>` + lines.map(([r, n]) => cardHtml(r, n)).join(""); }).join("") || `<div class="empty">${q ? "No matches." : "Nothing scanned yet."}</div>`;
 }
 $("groupBy").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
+$("stack").onchange = () => { if (!$("invList").classList.contains("hidden")) renderInvList(); };
 $("search").oninput = () => { $("invList").classList.remove("hidden"); $("btnShowInv").textContent = "Hide"; renderInvList(); };
 $("btnSummary").onclick = () => { const s = $("summary"); s.classList.toggle("hidden"); if (!s.classList.contains("hidden")) renderSummary(); };
 function renderSummary() {
@@ -1194,7 +1232,7 @@ refreshListSelects(); renderInvTotals();
 
 /* ================= export ================= */
 const COLS = [["list", "List"], ["name", "Card"], ["set", "Set"], ["set_name", "Set name"], ["number", "#"], ["variant", "Variant"], ["rarity", "Rarity"], ["foil", "Foil"], ["cond", "Condition"], ["price", "TCG market ($)"], ["adj", "Adjusted ($)"], ["price_at_scan", "Price at scan ($)"], ["eur", "Cardmarket (€)"], ["flag", "Flag"], ["tier", "Price tier"], ["color", "Color"], ["type", "Type"], ["mv", "Mana value"], ["artist", "Artist"], ["released", "Released"], ["lang", "Lang"], ["review", "Review"], ["notes", "Notes"], ["note", "My note"], ["name_read", "Name as read"], ["via", "Identified by"], ["photo", "Source"], ["ts", "Scanned"], ["uri", "Scryfall"], ["image", "Image"], ["oracle_text", "Oracle text"]];
-function exportRows(rows) { return (rows || inventory).slice().sort((a, b) => (b.price || -1) - (a.price || -1)).map(r => { const o = {}; COLS.forEach(([k, h]) => { o[h] = k === "flag" ? (flagged(r) ? "YES" : "") : k === "foil" ? (r.foil ? "yes" : "no") : k === "tier" ? tierOf(r) : k === "list" ? (r.list || "Unsorted") : k === "adj" ? (r.price == null ? "" : Math.round(r.price * (COND[r.cond] || 1) * 100) / 100) : (r[k] == null ? "" : r[k]); }); return o; }); }
+function exportRows(rows) { return (rows || inventory).slice().sort((a, b) => (b.price || -1) - (a.price || -1)).map(withDetails).map(r => { const o = {}; COLS.forEach(([k, h]) => { o[h] = k === "flag" ? (flagged(r) ? "YES" : "") : k === "foil" ? (r.foil ? "yes" : "no") : k === "tier" ? tierOf(r) : k === "list" ? (r.list || "Unsorted") : k === "adj" ? (r.price == null ? "" : Math.round(r.price * (COND[r.cond] || 1) * 100) / 100) : (r[k] == null ? "" : r[k]); }); return o; }); }
 function download(name, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
 const CONDS_LONG = { NM: "near_mint", LP: "lightly_played", MP: "moderately_played", HP: "heavily_played", DMG: "damaged" };
 const CONDS_DECKBOX = { NM: "Near Mint", LP: "Lightly Played", MP: "Played", HP: "Heavily Played", DMG: "Poor" };
@@ -1297,7 +1335,7 @@ $("fixAiExact").onclick = async () => {
   $("fixAiExact").disabled = false; $("fixAiExact").textContent = "Read exact printing with AI (about 1¢)";
 };
 async function renderDetails() {
-  const r = fixRow;
+  const r = withDetails(fixRow);
   if (r.unknown) { $("fixImg").src = (await cropStore.get(r.id)) || ""; $("fixImg").alt = "your photo of the card";
     $("fixKv").innerHTML = `<div><b>Not identified.</b> Looks ${esc(r.desc || "")}.</div><div>Pick one of the closest matches below, type the name, or ask AI.</div>`; $("fixOracle").textContent = ""; $("fixAiExactRow").classList.add("hidden"); return; }
   $("fixUnknown").classList.add("hidden");
