@@ -1320,7 +1320,7 @@ function flashCard(row, twinRow, pile) {         // big, glanceable confirmation
    phone's own autofocus, then sweeps the manual focus range itself, locks the best distance, and drops back to autofocus when
    the scene changes a lot. Exposure: if the title band blows out it steps the exposure down; too dark steps it up. */
 const at = { sharpHist: [], sweeping: false, locked: null, lastAct: 0, evSteps: 0, lastEv: 0, kicked: false };
-function autoTuneStart() { at.sharpHist = []; at.sweeping = false; at.locked = settings.camera && settings.camera.focusDistance != null ? settings.camera.focusDistance : null; at.lastAct = 0; at.evSteps = 0; }
+function autoTuneStart() { at.sharpHist = []; at.sweeping = false; at.locked = settings.camera && settings.camera.trained && settings.camera.focusDistance != null ? settings.camera.focusDistance : null; at.lastAct = 0; at.evSteps = 0; at.cooldown = 0; at.noQuad = 0; }
 function autoTuneFrame(sharpNow, blownFrac, darkFrac, motion, hasQuad) {
   if (!live.track || !live.caps) return;
   if (!hasQuad) { at.noQuad = (at.noQuad || 0) + 1; if (at.noQuad > 6) at.sharpHist = []; }   // an empty table looks soft — that's not a focus problem
@@ -1352,15 +1352,21 @@ async function autoFocusSweep() {                 // a quick pass over the focus
       const sh = sharpness(gctx, Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), (Math.max(...ys) - Math.min(...ys)) * 0.25);
       if (sh > bestSh) { bestSh = sh; best = v; }
     }
-    if (best != null && live.on && bestSh >= 1.5) { at.locked = best; settings.camera = settings.camera || {}; settings.camera.focusDistance = best; saveSettings(); trc(`auto-tune: focus locked at ${best.toFixed(2)} (sharp ${Math.round(bestSh)})`); await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: best }] }).catch(() => {}); at.cooldown = Date.now() + 20000; }
+    if (best != null && live.on && bestSh >= 1.5) { at.locked = best; trc(`auto-tune: focus held at ${best.toFixed(2)} for this session (sharp ${Math.round(bestSh)})`); await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: best }] }).catch(() => {}); at.cooldown = Date.now() + 20000; }
     else if (live.on) { trc("auto-tune: nothing sharp anywhere in the sweep — scene is featureless, back to autofocus"); at.locked = null; await live.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); at.cooldown = Date.now() + 30000; }
   } finally { at.sweeping = false; at.sharpHist = []; }
+}
+let lastPoi = -1e9;
+function focusPoint(nx, ny, why) {            // ask the camera to focus (and meter) on this spot; harmless where unsupported
+  if (!live.track) return; const t = performance.now(); if (t - lastPoi < 1200) return; lastPoi = t;
+  const p = { x: Math.max(0, Math.min(1, nx)), y: Math.max(0, Math.min(1, ny)) };
+  live.track.applyConstraints({ advanced: [{ focusMode: "continuous", pointsOfInterest: [p] }] }).then(() => { if (!live.poiSaid) { live.poiSaid = true; trc(`focus follows the card${why ? " (" + why + ")" : ""}`); } }).catch(() => {});
 }
 let lastKick = 0;
 function focusKick() {                          // nudge the autofocus when frames stay soft
   if (!live.track || Date.now() - lastKick < 1500) return; lastKick = Date.now();
   const cam = settings.camera || {};
-  const c = cam.focusDistance != null && live.caps && live.caps.focusDistance ? { focusMode: "manual", focusDistance: cam.focusDistance } : { focusMode: "continuous" };
+  const c = cam.trained && cam.focusDistance != null && live.caps && live.caps.focusDistance ? { focusMode: "manual", focusDistance: cam.focusDistance } : { focusMode: "continuous" };
   live.track.applyConstraints({ advanced: [c] }).catch(() => {});
 }
 function pileTone(name) { const i = Math.max(0, allLists().indexOf(name)); const f = [1320, 990, 1760, 660, 1480, 880][i % 6]; beep(f, 90); if (i === 2) beep(f, 90, 0.12); }
@@ -1434,11 +1440,12 @@ async function startLive() {
     live.track = live.stream.getVideoTracks()[0];
     try { live.caps = live.track.getCapabilities ? live.track.getCapabilities() : {}; } catch (e) { live.caps = {}; }
     $("liveTorch").classList.toggle("hidden", !live.caps.torch);
+    if (settings.camera && settings.camera.focusDistance != null && !settings.camera.trained) { delete settings.camera.focusDistance; saveSettings(); }
     await applyCamera();
     live.on = true; live.lastT = 0; live.startT = Date.now(); setMode(live.mode); keepAwake(true); voiceStart(); updateCount(); renderLiveLast(); live.statsTimer = setInterval(liveStats, 30000);
     const fp = db.hashIds ? db.hashIds.length : 0, ln = Object.keys(learned).length; setTimeout(() => { if (live.on && !$("train").classList.contains("hidden") === false) setHint(`${HINTS[live.mode]}  (${fp ? fp.toLocaleString() + " fingerprints" : "no fingerprints"}${ln ? " + " + ln + " learned" : ""}, reader ${settings.ocrMode === "off" ? "off" : ocr.failed ? "failed" : "on"})`); }, 1500);
     live.autoBackupTimer = setInterval(() => { if (live.on && live.items.some(i => i.row)) driveAutoBackup("periodic"); }, 10 * 60 * 1000);
-    autoTuneStart(); live.trace = []; live.traceShots = []; live.snapT = {}; live.t0 = performance.now(); live.trcT = {};
+  autoTuneStart(); live.trace = []; live.traceShots = []; live.snapT = {}; live.t0 = performance.now(); live.trcT = {};
   trc(`session start · ${APP_VERSION} · mode ${live.mode} · ${settings.fast ? "FAST" : "normal"} · strict ${settings.strict} · blindSnap ${settings.blindSnap || "off"} · fingerprints ${db.hashIds ? db.hashIds.length : 0} · learned ${Object.keys(learned).length}`);
   setTimeout(() => { if (live.caps) trc(`camera: ${video.videoWidth}x${video.videoHeight} · focusDistance ${live.caps.focusDistance ? "yes" : "no"} · ev ${live.caps.exposureCompensation ? "yes" : "no"} · zoom ${live.caps.zoom ? "yes" : "no"}`); }, 1200);
     if (settings.ocrMode !== "off" && db.loaded) ocrWorker().catch(() => {});
@@ -1553,7 +1560,13 @@ $("pickList").addEventListener("click", e => {
   const b = e.target.closest("button[data-q]"); if (b) { const r = inventory.find(x => x.id === b.dataset.row); if (!r) return; const nq = qtyOf(r) + (+b.dataset.q); if (nq <= 0) { if (!confirm(`Remove ${r.name}?`)) return; inventory = inventory.filter(x => x !== r); live.items = live.items.filter(i => i.row !== r); } else r.qty = nq; saveInv(); renderPick(); updateCount(); renderLiveLast(); return; }
   const el = e.target.closest(".li[data-row]"); if (el) openFix(el.dataset.row);
 });
-video.addEventListener("click", () => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad, true); });
+let tapT = 0, tapTimer = null;
+video.addEventListener("click", e => { if (!live.on || live.paused) return;
+  const now2 = performance.now(); const r = video.getBoundingClientRect(); const nx = (e.clientX - r.left) / Math.max(1, r.width), ny = (e.clientY - r.top) / Math.max(1, r.height);
+  if (now2 - tapT < 350) { clearTimeout(tapTimer); tapTimer = null; tapT = 0; lastPoi = -1e9; focusPoint(nx, ny, "double tap"); setHint("Focusing there…"); return; }
+  tapT = now2; clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => { if (!live.on || live.paused) return; live.hoverCool = true; liveCapture(live.lastQuad || guideQuad(), null, live.retry, !live.lastQuad, true); }, 360);
+});
 overlay.addEventListener("click", () => { if (live.mode !== "sweep") video.click(); });
 function viewMap() { const vw = video.videoWidth, vh = video.videoHeight, cw = overlay.clientWidth, ch = overlay.clientHeight; const s = Math.max(cw / vw, ch / vh); return { s, ox: (cw - vw * s) / 2, oy: (ch - vh * s) / 2, vw, vh, cw, ch }; }
 function guideQuad() { const m = viewMap(); const h = 0.7 * m.ch / m.s, w = h * 63 / 88, cx = m.vw / 2, cy = m.vh / 2; return [{ x: cx - w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy - h / 2 }, { x: cx + w / 2, y: cy + h / 2 }, { x: cx - w / 2, y: cy + h / 2 }]; }
@@ -1602,6 +1615,7 @@ function liveLoop(t) {
     if (!live.armed && !quad) { if ((live.frameNo = (live.frameNo || 0) + 1) % P().emptyEvery === 0) { const gq = guideQuad(), gc = regionOf(gctx, gq, s); live.emptyFrames = gc && !looksLikeCard(gc, false).ok ? live.emptyFrames + 1 : 0; if (live.emptyFrames >= 2) { live.armed = true; live.emptyFrames = 0; } } }
     if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
     if (quad) sheenPush(gctx, quad, s); else if (live.sheen && live.sheen.length && motion > 20) sheenReset();
+    if (quad && !(settings.camera && settings.camera.trained) && !at.sweeping) { const cx2 = quad.reduce((a, p) => a + p.x, 0) / 4 / video.videoWidth, cy2 = quad.reduce((a, p) => a + p.y, 0) / 4 / video.videoHeight; focusPoint(cx2, cy2); }
     if (quad && live.mode !== "lookup" && live.armed && db.hashIds && db.hashIds.length && live.tracker.state !== "cooldown") liveScan(quad, gctx, s);
     if (!quad) live.votes = [];
     live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev === "held" && live.items[0] ? itemStatus(live.items[0]) : ev);
@@ -2003,13 +2017,13 @@ $("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour
 if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
 
 /* ================= a one-tap report I can actually debug from ================= */
-const APP_VERSION = "v29";
+const APP_VERSION = "v30";
 $("appVer").textContent = APP_VERSION;
 function reportText() {
   const s = settings;
   return [`cardscan ${APP_VERSION} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
     $("dbStat").textContent, $("hashStat").textContent, $("ocrStat").textContent,
-    `learned ${Object.keys(learned).length} · strictness ${s.strict} · ${s.fast ? "FAST" : "normal"} · mode ${s.mode} · focus ${s.camera && s.camera.focusDistance != null ? "locked " + (+s.camera.focusDistance).toFixed(2) : "auto"} · languages ${s.langs.join(",") || "en"}`,
+    `learned ${Object.keys(learned).length} · strictness ${s.strict} · ${s.fast ? "FAST" : "normal"} · mode ${s.mode} · focus ${s.camera && s.camera.trained && s.camera.focusDistance != null ? "locked " + (+s.camera.focusDistance).toFixed(2) + " (wizard)" : "following the card"} · languages ${s.langs.join(",") || "en"}`,
     `inventory ${inventory.length} rows · piles: hits→${s.autoList || "-"} foils→${s.foilList || "-"} rares→${s.rareList || "-"} rest→${s.bulkList || "-"}`].join("\n");
 }
 const imgLoad = src => new Promise(res => { if (!src) return res(null); const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
