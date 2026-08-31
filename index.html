@@ -131,6 +131,7 @@ html.bigtext{font-size:112%}
   <div class="field"><label for="sortAssist">Sort-assist: say which pile each card goes to</label><select id="sortAssist"><option value="off">Off</option><option value="on">On — uses the rules below</option></select></div>
   <div class="row" id="sortRules"><div class="field" style="flex:1;margin:0"><label for="foilList">Foils go to</label><select id="foilList"><option value="">— the scan list —</option></select></div>
     <div class="field" style="flex:1;margin:0"><label for="bulkList">Everything else goes to</label><select id="bulkList"><option value="">— the scan list —</option></select></div></div>
+  <div class="field"><label for="blindSnap">Snap the guide area even when no card edges are found (for white-bordered cards on light tables)</label><select id="blindSnap"><option value="off">Off — ask me to tap 📸 instead (recommended)</option><option value="on">On</option></select></div>
   <div class="field"><label for="fastMode">Speed</label><select id="fastMode"><option value="off">Normal — best reads (full-resolution photos, full text read)</option><option value="on">⚡ Fast — snaps sooner, video frames, name-only read; fix printings later</option></select></div>
   <div class="field"><label for="foilGuess">Foil guessing (from the shimmer while you hover; trained in the camera walk-through)</label><select id="foilGuess"><option value="on">On — sets foil when confident, asks when not</option><option value="off">Off — use the foil checkbox</option></select></div>
   <div class="field"><label for="hand">Big Snap button on the</label><select id="hand"><option value="right">right (right-handed)</option><option value="left">left (left-handed)</option></select></div>
@@ -537,7 +538,7 @@ html.bigtext{font-size:112%}
 "use strict";
 const $ = id => document.getElementById(id);
 const SETTINGS_KEY = "cardscan_settings", INV_KEY = "cardscan_inventory", LEARNED_KEY = "cardscan_learned";
-const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on", sortAssist: "off", foilList: "", bulkList: "", voiceCmd: "off", playset: 4, gClientId: "", driveAuto: true, photoMin: 5, drive: {}, foil: {}, hand: "right", langs: [], imgAuto: true, tourDone: false, fast: false, rareList: "", pileTones: "on", bigText: "normal", cond: "NM" },
+const settings = Object.assign({ apiKey: "", model: "claude-sonnet-5", threshold: 1, lists: ["Unsorted"], lastList: "Unsorted", autoList: "", voice: "hits", camera: {}, mode: "single", aiMode: "manual", strict: "normal", repeats: "skip", ocrMode: "on", sortAssist: "off", foilList: "", bulkList: "", voiceCmd: "off", playset: 4, gClientId: "", driveAuto: true, photoMin: 5, drive: {}, foil: {}, hand: "right", langs: [], imgAuto: true, tourDone: false, fast: false, blindSnap: "off", rareList: "", pileTones: "on", bigText: "normal", cond: "NM" },
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
 let inventory = JSON.parse(localStorage.getItem(INV_KEY) || "[]");
 inventory.forEach(r => { if (!r.list) r.list = "Unsorted"; if (!r.cond) r.cond = "NM"; });
@@ -590,7 +591,7 @@ $("apiKey").value = settings.apiKey; $("model").value = settings.model; $("thres
 $("aiMode").value = settings.aiMode; $("strict").value = settings.strict; $("repeats").value = settings.repeats; $("ocrMode").value = settings.ocrMode;
 const LANGS = { ja: ["jpn", "Japanese"], de: ["deu", "German"], fr: ["fra", "French"], es: ["spa", "Spanish"], it: ["ita", "Italian"], pt: ["por", "Portuguese"], ru: ["rus", "Russian"], ko: ["kor", "Korean"], zhs: ["chi_sim", "Chinese (simp.)"] };
 $("langBoxes").innerHTML = Object.entries(LANGS).map(([k, v]) => `<label class="chk"><input type="checkbox" class="langbox" value="${k}" ${settings.langs.includes(k) ? "checked" : ""}> ${v[1]}</label>`).join("");
-$("imgAuto").checked = settings.imgAuto !== false; $("fastMode").value = settings.fast ? "on" : "off"; $("pileTones").value = settings.pileTones || "on"; $("bigText").value = settings.bigText || "normal"; document.documentElement.classList.toggle("bigtext", settings.bigText === "large");
+$("imgAuto").checked = settings.imgAuto !== false; $("fastMode").value = settings.fast ? "on" : "off"; $("blindSnap").value = settings.blindSnap || "off"; $("pileTones").value = settings.pileTones || "on"; $("bigText").value = settings.bigText || "normal"; document.documentElement.classList.toggle("bigtext", settings.bigText === "large");
 $("sortAssist").value = settings.sortAssist; $("voiceCmd").value = settings.voiceCmd; $("hand").value = settings.hand || "right"; $("live").classList.toggle("lefty", settings.hand === "left"); $("foilGuess").value = settings.foil.off ? "off" : "on"; $("playset").value = settings.playset; $("gClientId").value = settings.gClientId || ""; $("driveAuto").checked = settings.driveAuto !== false; $("photoMin").value = settings.photoMin;
 $("thrLabel").textContent = fmtThr(); $("thrPillVal").textContent = fmtThr();
 $("thrPill").onclick = () => { const v = prompt("Cards at or above this price are hits (gold, beep, and the hit list):", fmtThr()); if (v == null) return; const t = parseFloat(v); if (!(t >= 0)) return; settings.threshold = t; saveSettings(); $("threshold").value = t; $("thrLabel").textContent = fmtThr(); $("thrPillVal").textContent = fmtThr(); renderInvTotals(); rerenderScan(); };
@@ -599,7 +600,7 @@ $("saveSettings").onclick = () => {
   settings.apiKey = $("apiKey").value.trim(); settings.model = $("model").value.trim() || "claude-sonnet-5";
   settings.threshold = parseFloat($("threshold").value) || 0; settings.autoList = $("autoList").value === NEW_LIST ? "" : $("autoList").value;
   settings.voice = $("voice").value; settings.aiMode = $("aiMode").value; settings.strict = $("strict").value; settings.repeats = $("repeats").value; settings.ocrMode = $("ocrMode").value;
-  settings.fast = $("fastMode").value === "on"; fastUi(); settings.rareList = $("rareList").value === NEW_LIST ? "" : $("rareList").value; settings.pileTones = $("pileTones").value; settings.bigText = $("bigText").value; document.documentElement.classList.toggle("bigtext", settings.bigText === "large"); settings.langs = Array.from(document.querySelectorAll(".langbox:checked")).map(b => b.value); ocr.multi = null; settings.imgAuto = $("imgAuto").checked; settings.hand = $("hand").value; $("live").classList.toggle("lefty", settings.hand === "left"); settings.foil.off = $("foilGuess").value === "off"; settings.sortAssist = $("sortAssist").value; settings.foilList = $("foilList").value === NEW_LIST ? "" : $("foilList").value; settings.bulkList = $("bulkList").value === NEW_LIST ? "" : $("bulkList").value; settings.voiceCmd = $("voiceCmd").value;
+  settings.blindSnap = $("blindSnap").value; settings.fast = $("fastMode").value === "on"; fastUi(); settings.rareList = $("rareList").value === NEW_LIST ? "" : $("rareList").value; settings.pileTones = $("pileTones").value; settings.bigText = $("bigText").value; document.documentElement.classList.toggle("bigtext", settings.bigText === "large"); settings.langs = Array.from(document.querySelectorAll(".langbox:checked")).map(b => b.value); ocr.multi = null; settings.imgAuto = $("imgAuto").checked; settings.hand = $("hand").value; $("live").classList.toggle("lefty", settings.hand === "left"); settings.foil.off = $("foilGuess").value === "off"; settings.sortAssist = $("sortAssist").value; settings.foilList = $("foilList").value === NEW_LIST ? "" : $("foilList").value; settings.bulkList = $("bulkList").value === NEW_LIST ? "" : $("bulkList").value; settings.voiceCmd = $("voiceCmd").value;
   settings.playset = Math.max(1, parseInt($("playset").value) || 4); settings.gClientId = $("gClientId").value.trim(); settings.driveAuto = $("driveAuto").checked; settings.photoMin = Math.max(0, parseFloat($("photoMin").value) || 0); saveSettings();
   $("thrLabel").textContent = fmtThr(); $("thrPillVal").textContent = fmtThr(); $("settingsStatus").textContent = "Saved"; renderInvTotals(); renderSetup();
   setTimeout(() => $("settingsStatus").textContent = "", 1500);
@@ -690,9 +691,14 @@ async function loadDb(force) {
   } catch (e) { db.hashes = null; $("hashStat").textContent = "Fingerprints: not loaded — " + (e.message || e); }
   renderCoverage();
 }
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; renderSetup(); });
+window.addEventListener("appinstalled", () => { installEvt = null; renderSetup(); setStatus("Installed — open cardscan from your app drawer / home screen from now on."); });
+const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
 /* a one-glance checklist of what's set up, with the fix one tap away */
 function renderSetup() {
   const items = [
+    ["Installed as an app", isStandalone() ? "yes — running in its own window" : installEvt ? "no — one tap installs it (own icon, no browser bars)" : "no — in Chrome: ⋮ menu → Install app, then open it from the app drawer", isStandalone(), "installApp"],
     ["Price database", db.loaded ? `loaded (${db.cards.length.toLocaleString()} printings)` : "not loaded — build cards.json.gz with build_db.py and upload it", !!db.loaded, "btnDb"],
     ["Fingerprints", db.hashIds && db.hashIds.length ? `${db.hashIds.length.toLocaleString()} cards` : "none — run build_db.py --hash-sets all and upload hashes.json.gz", !!(db.hashIds && db.hashIds.length), "btnDb"],
     ["Text reader", settings.ocrMode === "off" ? "off" : ocr.failed ? "failed to load" : "on", settings.ocrMode !== "off" && !ocr.failed, "btnSettings"],
@@ -705,6 +711,7 @@ function renderSetup() {
 }
 $("setupHide").onclick = () => { settings.setupHidden = today(); saveSettings(); $("setup").classList.add("hidden"); };
 $("setupList").addEventListener("click", e => { const b = e.target.closest("button[data-act]"); if (!b) return; const a = b.dataset.act;
+  if (a === "installApp") { if (installEvt) { installEvt.prompt(); installEvt.userChoice.then(() => renderSetup()); } else { alert("In Chrome: tap the ⋮ menu (top right) → 'Install app' (or 'Add to Home screen').\nThen open cardscan from your app drawer — it runs in its own window, no browser bars.\nRemove any old shortcut first."); } return; }
   if (a === "quickPiles") { ["Sell", "Foils", "Bulk"].forEach(n => { if (!settings.lists.includes(n)) settings.lists.push(n); }); settings.autoList = "Sell"; settings.foilList = "Foils"; settings.bulkList = "Bulk"; settings.sortAssist = "on"; saveSettings(); refreshListSelects(); $("sortAssist").value = "on"; renderSetup(); setStatus("Piles set: $" + fmtThr() + "+ → Sell, foils → Foils, everything else → Bulk, sort-assist on. Change them in Settings any time."); return; }
   if (a === "btnSettings" || a === "btnDb" || a === "btnDriveConnect") { $("settings").classList.remove("hidden"); const g = $(a).closest("details"); if (g) g.open = true; $(a).scrollIntoView({ behavior: "smooth", block: "center" }); if (a !== "btnSettings") $(a).click(); return; }
   $(a).click(); });
@@ -1232,6 +1239,13 @@ function flashCard(row, twinRow, pile) {         // big, glanceable confirmation
   $("flashSub").textContent = r.unknown ? "tap the row to fix" : `${money(r.price)}${r.set ? " · " + r.set + " #" + r.number : ""}${r.foil ? " · foil" : ""}${pile ? " · → " + pile : ""}${r.owned_more ? " · +" + r.owned_more + " owned" : ""}`;
   $("flash").classList.remove("hidden"); clearTimeout(flashTimer); flashTimer = setTimeout(() => $("flash").classList.add("hidden"), 1600);
 }
+let lastKick = 0;
+function focusKick() {                          // nudge the autofocus when frames stay soft
+  if (!live.track || Date.now() - lastKick < 1500) return; lastKick = Date.now();
+  const cam = settings.camera || {};
+  const c = cam.focusDistance != null && live.caps && live.caps.focusDistance ? { focusMode: "manual", focusDistance: cam.focusDistance } : { focusMode: "continuous" };
+  live.track.applyConstraints({ advanced: [c] }).catch(() => {});
+}
 function pileTone(name) { const i = Math.max(0, allLists().indexOf(name)); const f = [1320, 990, 1760, 660, 1480, 880][i % 6]; beep(f, 90); if (i === 2) beep(f, 90, 0.12); }
 function speak(text, important) {
   if (settings.voice === "off" || settings.mute || !("speechSynthesis" in window)) return;
@@ -1305,6 +1319,7 @@ async function startLive() {
     $("liveTorch").classList.toggle("hidden", !live.caps.torch);
     await applyCamera();
     live.on = true; live.lastT = 0; live.startT = Date.now(); setMode(live.mode); keepAwake(true); voiceStart(); updateCount(); renderLiveLast(); live.statsTimer = setInterval(liveStats, 30000);
+    if ((!settings.camera || !settings.camera.trained || settings.camera.trained === "skipped")) setTimeout(() => { if (live.on) setHint("Camera not trained — tap 🎯 Train (2 min) so pictures come out sharp"); }, 4000);
     const fp = db.hashIds ? db.hashIds.length : 0, ln = Object.keys(learned).length; setTimeout(() => { if (live.on && !$("train").classList.contains("hidden") === false) setHint(`${HINTS[live.mode]}  (${fp ? fp.toLocaleString() + " fingerprints" : "no fingerprints"}${ln ? " + " + ln + " learned" : ""}, reader ${settings.ocrMode === "off" ? "off" : ocr.failed ? "failed" : "on"})`); }, 1500);
     live.autoBackupTimer = setInterval(() => { if (live.on && live.items.some(i => i.row)) driveAutoBackup("periodic"); }, 10 * 60 * 1000);
     if (!(settings.camera && settings.camera.trained)) setTimeout(() => { if (live.on) startTrain(); }, 600);
@@ -1474,7 +1489,9 @@ function liveLoop(t) {
     if (motion > 9) { live.moving++; if (live.moving >= 2) { live.hoverCool = false; live.steady = 0; } } else live.moving = 0;
     if (!quad && !live.hoverCool && live.busy < 2) {
       const sh = measureSharp(); live.steady = motion < 5 && sh > 4 ? live.steady + 1 : 0;
-      if (live.steady >= P().hoverSteady) { live.steady = 0; live.hoverCool = true; if (handInGuide(gctx, s)) { setHint("Hand in the picture — move it away"); } else { setHint("Snap…"); liveCapture(guideQuad(), null, live.retry, true); } }
+      if (live.steady >= P().hoverSteady) { live.steady = 0; live.hoverCool = true; if (handInGuide(gctx, s)) { setHint("Hand in the picture — move it away"); }
+        else if (settings.blindSnap === "on") { setHint("Snap…"); liveCapture(guideQuad(), null, live.retry, true); }
+        else { setHint("I can't find the card's edges — plainer background or more light helps (📸 forces a picture)"); } }
       else if (live.steady >= 2) setHint("Hold still… snapping in a moment (or tap 📸)");
     }
     return;
@@ -1622,7 +1639,8 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     let q = quad, src = shot.canvas, found = null;
     if (shot.photo || hover) {                       // find the card again in the (bigger) picture; fall back to the scaled quad
       const mat = cv.imread(src); try { found = det.detectOne(mat); } catch (e) {} mat.delete();
-      if (found) q = found; else if (shot.photo) { src = full; q = quad; } else q = quad;
+      if (found) q = found; else if (hover && !manual && settings.blindSnap !== "on") { setHint("No card edges found — 📸 forces a picture of the guide area"); live.rescan = rescan; return; }
+      else if (shot.photo) { src = full; q = quad; } else q = quad;
     }
     // a short burst: the sharpest frame is read, every frame's fingerprint is tried (glare rarely ruins all of them)
     const cropOf = c => { const mat = cv.imread(c); const m = det.warpCard(mat, q); const out = matToCanvas(cv, m); m.delete(); mat.delete(); return out; };
@@ -1630,12 +1648,27 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     if (!shot.photo && !track && !preId) { for (let i = 1; i < P().frames; i++) { await sleep(60); const f2 = live.burst || (live.burst = document.createElement("canvas")); f2.__burst = true; f2.width = video.videoWidth; f2.height = video.videoHeight; f2.getContext("2d").drawImage(video, 0, 0); try { cands.push(cropOf(f2)); } catch (e) {} } }
     const sharp = cands.map(c => sharpness(c.getContext("2d"), Math.round(c.width * 0.08), Math.round(c.height * 0.03), Math.round(c.width * 0.84), Math.round(c.height * 0.09)));
     let bi = 0; for (let i = 1; i < cands.length; i++) if (sharp[i] > sharp[bi]) bi = i;
-    crop = cands[bi]; hashes = cands.map(hashCard); hash = hashes[bi];
+    crop = cands[bi]; hashes = cands.map(hashCard); hash = hashes[bi]; var bestSharp = sharp[bi];
+    if (!manual && !track && !preId && (live.softRuns || 0) >= 4 && (!settings.camera || settings.camera.trained === "skipped" || !settings.camera.trained)) { toast("Pictures keep coming out soft — training the camera fixes this", "Train now", () => $("tuneTrain").click()); live.softRuns = 0; }
+
     thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7);
     var hadOutline = !!found || (!hover && !shot.photo); }
   catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
   const looks = looksLikeCard(crop, hadOutline);
-  if (!looks.ok) { setHint(looks.why); sound.bad(); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
+  if (!looks.ok) {
+    if (track) { track.captured = false; track.status = "pending"; }
+    else if (!manual && !retryItem) { live.tracker.state = "tracking"; live.tracker.stable = P().lock - 1; live.hoverCool = false; }   // try again by itself
+    if (!manual && !track && !preId && bestSharp < (crop.width >= 550 ? 320 : 160) && (live.softRuns || 0) < 5 && /doesn't look like a card/.test(looks.why)) {
+      live.softRuns = (live.softRuns || 0) + 1; setHint("Blurry — holding for focus…"); focusKick();                                   // an out-of-focus card reads as "featureless"
+    } else { setHint(looks.why); sound.bad(); }
+    live.rescan = rescan; return;
+  }
+  const softLimit = crop.width >= 550 ? 320 : 160;
+  if (!manual && !track && !preId && bestSharp < softLimit && !hashKnown(hash) && (live.softRuns || 0) < 5) {
+      // fingerprints shrug off mild blur, but a picture this soft with no match would only make a junk "unknown": hold, refocus, retry
+      live.softRuns = (live.softRuns || 0) + 1; live.tracker.state = "tracking"; live.tracker.stable = P().lock - 1; live.hoverCool = false;
+      setHint("Blurry — holding for focus…"); focusKick(); live.rescan = rescan; return;
+    } live.softRuns = 0;
   if (auto && !live.armed && live.lastHash && hamming(live.lastHash, hash) <= 60) { setHint("Same card — move it fully away to count another copy, or tap +1 same"); return; }
   if (!track && !rescan) { live.armed = false; live.lastHash = hash; live.lastCaptureT = Date.now(); live.votes = []; live.liveGuess = null; }
   const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
@@ -1833,7 +1866,7 @@ $("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour
 if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
 
 /* ================= a one-tap report I can actually debug from ================= */
-const APP_VERSION = "v21";
+const APP_VERSION = "v24";
 $("appVer").textContent = APP_VERSION;
 function reportText() {
   const s = settings;
