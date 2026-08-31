@@ -1321,9 +1321,11 @@ function flashCard(row, twinRow, pile) {         // big, glanceable confirmation
    the scene changes a lot. Exposure: if the title band blows out it steps the exposure down; too dark steps it up. */
 const at = { sharpHist: [], sweeping: false, locked: null, lastAct: 0, evSteps: 0, lastEv: 0, kicked: false };
 function autoTuneStart() { at.sharpHist = []; at.sweeping = false; at.locked = settings.camera && settings.camera.focusDistance != null ? settings.camera.focusDistance : null; at.lastAct = 0; at.evSteps = 0; }
-function autoTuneFrame(sharpNow, blownFrac, darkFrac, motion) {
+function autoTuneFrame(sharpNow, blownFrac, darkFrac, motion, hasQuad) {
   if (!live.track || !live.caps) return;
-  at.sharpHist.push(sharpNow); if (at.sharpHist.length > 12) at.sharpHist.shift();
+  if (!hasQuad) { at.noQuad = (at.noQuad || 0) + 1; if (at.noQuad > 6) at.sharpHist = []; }   // an empty table looks soft — that's not a focus problem
+  else { at.noQuad = 0; at.sharpHist.push(sharpNow); if (at.sharpHist.length > 12) at.sharpHist.shift(); }
+  if (at.cooldown && Date.now() < at.cooldown) return;
   const soft = at.sharpHist.length >= 8 && at.sharpHist.every(v => v < 5);
   if (at.locked != null && motion > 45) { at.locked = null; live.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); }
   if (soft && !at.sweeping && Date.now() - at.lastAct > 2500) {
@@ -1350,7 +1352,8 @@ async function autoFocusSweep() {                 // a quick pass over the focus
       const sh = sharpness(gctx, Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), (Math.max(...ys) - Math.min(...ys)) * 0.25);
       if (sh > bestSh) { bestSh = sh; best = v; }
     }
-    if (best != null && live.on) { at.locked = best; settings.camera = settings.camera || {}; settings.camera.focusDistance = best; saveSettings(); trc(`auto-tune: focus locked at ${best.toFixed(2)} (sharp ${Math.round(bestSh)})`); await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: best }] }).catch(() => {}); }
+    if (best != null && live.on && bestSh >= 1.5) { at.locked = best; settings.camera = settings.camera || {}; settings.camera.focusDistance = best; saveSettings(); trc(`auto-tune: focus locked at ${best.toFixed(2)} (sharp ${Math.round(bestSh)})`); await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: best }] }).catch(() => {}); at.cooldown = Date.now() + 20000; }
+    else if (live.on) { trc("auto-tune: nothing sharp anywhere in the sweep — scene is featureless, back to autofocus"); at.locked = null; await live.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); at.cooldown = Date.now() + 30000; }
   } finally { at.sweeping = false; at.sharpHist = []; }
 }
 let lastKick = 0;
@@ -1591,7 +1594,7 @@ function liveLoop(t) {
       const x0 = Math.min(...xs), y0 = Math.min(...ys), w0 = Math.max(...xs) - x0, h0 = Math.max(...ys) - y0;
       const shNow = sharpness(gctx, x0, y0, w0, h0 * 0.25);
       let blown = 0, dark = 0; try { const dd = gctx.getImageData(x0, y0, Math.max(1, w0 | 0), Math.max(1, (h0 * 0.25) | 0)).data; let n2 = 0; for (let i = 0; i < dd.length; i += 16) { const v = 0.299 * dd[i] + 0.587 * dd[i + 1] + 0.114 * dd[i + 2]; n2++; if (v > 248) blown++; if (v < 55) dark++; } blown /= n2; dark /= n2; } catch (e) {}
-      autoTuneFrame(shNow, blown, dark, motion);
+      autoTuneFrame(shNow, blown, dark, motion, !!quad);
     }
     if (quad && !quadIsCard(gctx, quad.map(p => ({ x: p.x / s, y: p.y / s })), s)) quad = null;   // an outline that isn't a real card edge is no outline
     if (live.mode === "stand" && motion > 12) { live.standMoves = (live.standMoves || 0) + 1; if (motion > 25 || live.standMoves >= 2) { live.tracker.reset(); live.hoverCool = false; live.steady = 0; live.standMoves = 0; } } else if (live.mode === "stand") live.standMoves = 0;
@@ -2000,7 +2003,7 @@ $("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour
 if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
 
 /* ================= a one-tap report I can actually debug from ================= */
-const APP_VERSION = "v28";
+const APP_VERSION = "v29";
 $("appVer").textContent = APP_VERSION;
 function reportText() {
   const s = settings;
