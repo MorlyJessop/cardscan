@@ -1456,6 +1456,7 @@ function liveLoop(t) {
   if (!$("train").classList.contains("hidden")) return;                               // training in progress: frames only, no captures
   if (singleLike() || live.retry) {
     let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
+    if (quad && !quadIsCard(gctx, quad.map(p => ({ x: p.x / s, y: p.y / s })), s)) quad = null;   // an outline that isn't a real card edge is no outline
     if (live.mode === "stand" && motion > 12) { live.standMoves = (live.standMoves || 0) + 1; if (motion > 25 || live.standMoves >= 2) { live.tracker.reset(); live.hoverCool = false; live.steady = 0; live.standMoves = 0; } } else if (live.mode === "stand") live.standMoves = 0;
     // re-arm only once the previous card is really gone: no outline AND the guide area no longer looks like a card, for a few frames
     if (!live.armed && !quad) { if ((live.frameNo = (live.frameNo || 0) + 1) % P().emptyEvery === 0) { const gq = guideQuad(), gc = regionOf(gctx, gq, s); live.emptyFrames = gc && !looksLikeCard(gc, false).ok ? live.emptyFrames + 1 : 0; if (live.emptyFrames >= 2) { live.armed = true; live.emptyFrames = 0; } } }
@@ -1480,6 +1481,7 @@ function liveLoop(t) {
   }
   // sweep: many cards per frame, track them, capture each once when it is steady and sharp
   let quads = []; try { const mat = live.cv.imread(grab); quads = live.det.detectCards(mat, { target: 640, minFrac: 0.012, maxFrac: 0.6 }); mat.delete(); } catch (e) { console.warn(e); }
+  quads = quads.filter(q => quadIsCard(gctx, q.map(p => ({ x: p.x / s, y: p.y / s })), s));
   const center = q => ({ x: q.reduce((a, p) => a + p.x, 0) / 4, y: q.reduce((a, p) => a + p.y, 0) / 4 });
   const heights = quads.map(q => Math.max(...q.map(p => p.y)) - Math.min(...q.map(p => p.y))).sort((a, b) => a - b), medH = heights.length ? heights[Math.floor(heights.length / 2)] : 100;
   for (const q of quads) {
@@ -1554,6 +1556,28 @@ async function hiResFrame() {                 // a real photo from the camera wh
 /* Instant identification: every frame with a card outline is matched against the fingerprints (a few ms each). When two frames in a
    row agree — one of them confidently — the card is added, usually well under half a second after it appears. Glare frames simply
    lose the vote instead of ruining a one-shot capture. The photo/OCR path stays as the fallback when fingerprints can't settle. */
+/* Only treat an outline as a card if it sits on a REAL boundary: sampling around the perimeter, the inside must differ from the
+   outside along most of it (a physical edge), and the inside ring must be one consistent colour (a printed border). Phantom
+   rectangles found in table texture and shadows fail this (measured: real card 100% of the perimeter, table shapes 38-50%). */
+function quadIsCard(gctx, quad, s) {
+  if (window.__noQuadCheck) return true;
+  const Pq = quad.map(p => ({ x: p.x * s, y: p.y * s }));
+  const w1 = Math.hypot(Pq[1].x - Pq[0].x, Pq[1].y - Pq[0].y), w2 = Math.hypot(Pq[2].x - Pq[3].x, Pq[2].y - Pq[3].y);
+  const h1 = Math.hypot(Pq[3].x - Pq[0].x, Pq[3].y - Pq[0].y), h2 = Math.hypot(Pq[2].x - Pq[1].x, Pq[2].y - Pq[1].y);
+  const ratio = ((w1 + w2) / 2) / Math.max(1, (h1 + h2) / 2); if (ratio < 0.5 || ratio > 0.95) return false;   // cards are 0.716 tall rectangles; allow tilt
+  const W = gctx.canvas.width, H = gctx.canvas.height;
+  if (!live.frameLum || live.frameLum.t !== live.lastT) { const d = gctx.getImageData(0, 0, W, H).data; const L = new Float32Array(W * H); for (let i = 0; i < W * H; i++) L[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; live.frameLum = { t: live.lastT, L }; }
+  const L = live.frameLum.L; const lum = (x, y) => { x |= 0; y |= 0; return (x < 0 || y < 0 || x >= W || y >= H) ? null : L[y * W + x]; };
+  const cx = (Pq[0].x + Pq[1].x + Pq[2].x + Pq[3].x) / 4, cy = (Pq[0].y + Pq[1].y + Pq[2].y + Pq[3].y) / 4;
+  let hit = 0, n = 0; const inside = [];
+  for (let e = 0; e < 4; e++) { const a = Pq[e], b = Pq[(e + 1) % 4]; const len = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)); let nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; if ((mx + nx * 6 - cx) ** 2 + (my + ny * 6 - cy) ** 2 < (mx - nx * 6 - cx) ** 2 + (my - ny * 6 - cy) ** 2) { nx = -nx; ny = -ny; }
+    for (let k = 1; k <= 10; k++) { const t = k / 11, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+      const li = lum(x - nx * 4, y - ny * 4), lo = lum(x + nx * 4, y + ny * 4); if (li == null || lo == null) continue; n++; if (Math.abs(li - lo) > 14) hit++; inside.push(li); } }
+  if (n < 20) return false;
+  const mean = inside.reduce((s2, v) => s2 + v, 0) / inside.length, sd = Math.sqrt(inside.reduce((s2, v) => s2 + (v - mean) ** 2, 0) / inside.length);
+  return hit / n >= 0.65 && sd <= 45;
+}
 function liveScan(quad, gctx, s) {
   const t = performance.now(); if (live.scanBusy || t - (live.scanT || 0) < 80) return; live.scanT = t; live.scanBusy = true;
   try {
@@ -1561,6 +1585,8 @@ function liveScan(quad, gctx, s) {
     try { m = det.warpCard(mat, quad.map(p => ({ x: p.x * s, y: p.y * s }))); } finally { mat.delete(); }
     if (!live.scanCanvas) { live.scanCanvas = document.createElement("canvas"); live.scanCanvas.__scan = true; }
     try { cv.imshow ? cv.imshow(live.scanCanvas, m) : null; } finally { m.delete(); }
+    const looks = looksLikeCard(live.scanCanvas, true);
+    if (!looks.ok) { (live.votes = live.votes || []).push(null); if (live.votes.length > 6) live.votes.shift(); live.liveGuess = null; return; }
     const hash = hashCard(live.scanCanvas); const k = hashKnown(hash);
     const votes = live.votes = (live.votes || []); votes.push(k ? { id: k.id, sure: k.sure, dist: k.dist, hash, twin: k.twin } : null); if (votes.length > 6) votes.shift();
     live.liveGuess = k ? { id: k.id, dist: k.dist } : null;
