@@ -1010,34 +1010,39 @@ async function verifySet(row, cropCanvas, twin) {
     if (prints.length < 2 || prints.length > 30) return;                       // basics and the like: the artwork match IS the set signal
     if (!P().ocrFull) { if (twin) row.review = [row.review, `${prints.length} sets share this card — check the set`].filter(Boolean).join("; "); return; }
     const w = await ocrWorker(); if (!w) return;
-    const rt0 = performance.now();
-    const botText = (await readRegion(w, regionCanvas(cropCanvas, 0.02, 0.895, 0.58, 0.09, 4, true))).toUpperCase();
-    trc(`set line read in ${Math.round(performance.now() - rt0)}ms: "${botText.slice(0, 28)}"`);
-    const toks = botText.split(/[^A-Z0-9]+/).filter(x => x.length >= 3 && x.length <= 5);
     const sets = Array.from(new Set(prints.map(c => c.set.toUpperCase())));
-    let bestSet = null, bd = 9; for (const t of toks) for (const s of sets) { const d = editDist(t, s); if (d < bd) { bd = d; bestSet = s; } }
-    if (bestSet && bd === 0) {
-      if (bestSet !== (row.set || "").toUpperCase()) {
+    const clearFlags = () => { row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|close call[^;]*|\d+ sets share[^;]*)/g, "").trim(); };
+    const resolve = text => {                                                  // what does this text settle, if anything?
+      const toks = text.split(/[^A-Z0-9]+/).filter(x => x.length >= 3 && x.length <= 5 && /[A-Z]/.test(x));
+      let bestSet = null, bd = 9; for (const t of toks) for (const s of sets) { const d = editDist(t, s); if (d < bd) { bd = d; bestSet = s; } }
+      if (bestSet && bd === 0) {
         const cands = prints.filter(c => c.set.toUpperCase() === bestSet);
-        const numM = botText.match(/\b(\d{1,4})\s*\/\s*\d{1,4}\b/); const num = numM ? numM[1] : "";
-        const pick = cands.find(c => String(c.collector_number) === String(parseInt(num))) || cands[0];
-        trc(`set corrected by the card itself: ${row.set}#${row.number} → ${bestSet}#${pick.collector_number}`);
-        rowFromCard(row, pick, row.foil); row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|close call[^;]*|\d+ sets share[^;]*)/g, "").trim();
-        row.notes = [row.notes, `set read from the card: ${bestSet}`].filter(Boolean).join("; ");
-      } else { row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|\d+ sets share[^;]*)/g, "").trim(); }
-    } else {
-      const numM = botText.match(/\b(\d{1,4})\s*\/\s*\d{1,4}\b/) || botText.match(/\b0*(\d{1,4})\b/);
-      const num = numM ? String(parseInt(numM[1])) : "";
-      const byNum = num ? prints.filter(c => String(parseInt(c.collector_number)) === num) : [];
-      if (byNum.length === 1) {
-        if (byNum[0].set.toUpperCase() !== (row.set || "").toUpperCase() || byNum[0].collector_number !== row.number) {
-          trc(`printing corrected by the number on the card: ${row.set}#${row.number} → ${byNum[0].set.toUpperCase()}#${byNum[0].collector_number}`);
-          rowFromCard(row, byNum[0], row.foil);
-        }
-        row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|close call[^;]*|\d+ sets share[^;]*)/g, "").trim();
-        row.notes = [row.notes, `number read from the card: ${num}`].filter(Boolean).join("; ");
-      } else if (twin && prints.length <= 12) { row.review = [row.review, `${sets.length} sets share this card — couldn't read the set line, tap to check`].filter(Boolean).join("; "); }
-    }
+        const pm = text.match(/\b(\d{1,4})\s*\/\s*\d{1,4}\b/); const n = pm ? String(parseInt(pm[1])) : "";
+        return { pick: cands.find(c => String(parseInt(c.collector_number)) === n) || cands[0], how: `set read from the card: ${bestSet}` };
+      }
+      for (const pair of text.matchAll(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/g)) {   // several number pairs can appear; use the first sane one that matches a printing
+        if (parseInt(pair[1]) > parseInt(pair[2]) + 40 || parseInt(pair[1]) > 1500) continue;
+        const n = String(parseInt(pair[1])); const byNum = prints.filter(c => String(parseInt(c.collector_number)) === n);
+        if (byNum.length === 1) return { pick: byNum[0], how: `number read from the card: ${n}` };
+      }
+      return null;
+    };
+    const rt0 = performance.now();
+    let whitelisted = false; try { await w.setParameters({ tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/•*- " }); whitelisted = true; } catch (e) {}
+    let got = null, botText = "";
+    try {
+      botText = (await readRegion(w, regionCanvas(cropCanvas, 0.02, 0.895, 0.58, 0.09, 4, true))).toUpperCase();
+      got = resolve(botText);
+      if (!got) { const t2 = (await readRegion(w, regionCanvas(cropCanvas, 0.02, 0.9, 0.34, 0.055, 5, true))).toUpperCase(); botText = (botText + " " + t2).trim(); got = resolve(botText); }
+    } finally { if (whitelisted) { try { await w.setParameters({ tessedit_char_whitelist: "" }); } catch (e) {} } }
+    trc(`set line read in ${Math.round(performance.now() - rt0)}ms: "${botText.slice(0, 34)}"${got ? " → " + got.pick.set.toUpperCase() + "#" + got.pick.collector_number : ""}`);
+    if (got) {
+      if (got.pick.set.toUpperCase() !== (row.set || "").toUpperCase() || got.pick.collector_number !== row.number) {
+        trc(`printing corrected by the card itself: ${row.set}#${row.number} → ${got.pick.set.toUpperCase()}#${got.pick.collector_number}`);
+        rowFromCard(row, got.pick, row.foil);
+      }
+      clearFlags(); row.notes = [row.notes, got.how].filter(Boolean).join("; ");
+    } else if (twin && prints.length <= 12) { row.review = [row.review, `${sets.length} sets share this card — couldn't read the set line, tap to check`].filter(Boolean).join("; "); }
   } catch (e) {}
 }
 /* ================= on-phone text reading (Tesseract) ================= */
@@ -1107,6 +1112,8 @@ async function ocrIdentify(cropCanvas) {
     if (!top.length) return null;
     const guesses = top.map(t => ({ name: db.cards[db.byName.get(t.name)[0]][1], score: t.score }));
     let best = top[0], second = top[1] ? top[1].score : 0;
+    const readLen = (titleText || "").replace(/[^a-z]/gi, "").length;
+    if (readLen < 4) { trc(`name read too short to trust: "${(titleText || "").slice(0, 12)}"`); return { guesses, title: titleText }; }
     if (best.score < 0.62) return { guesses, title: titleText };
     if (best.score - second < 0.06 || best.score < 0.75) {           // close call: let the type line decide
       const typeText = (await readRegion(w, regionCanvas(cropCanvas, 0.055, 0.555, 0.745, 0.065, 2))).toLowerCase();
@@ -1993,7 +2000,7 @@ $("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour
 if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
 
 /* ================= a one-tap report I can actually debug from ================= */
-const APP_VERSION = "v27";
+const APP_VERSION = "v28";
 $("appVer").textContent = APP_VERSION;
 function reportText() {
   const s = settings;
@@ -2018,7 +2025,7 @@ async function buildReport() {
     g.fillStyle = r.unknown ? "#ff7b7b" : "#e8e6df"; g.font = "600 20px system-ui";
     g.fillText((r.unknown ? "UNKNOWN" : r.name).slice(0, 30), x, y + Math.round(cw * 977 / 700) + 26);
     g.fillStyle = "#9aa3ad"; g.font = "17px system-ui";
-    g.fillText(`${r.unknown ? "" : r.set + " #" + r.number + " · "}via ${r.via || "-"}${r.dist != null ? " · dist " + r.dist : ""}`.slice(0, 34), x, y + Math.round(cw * 977 / 700) + 50);
+    g.fillText(`${r.unknown ? "" : r.set + " #" + r.number + " · "}via ${r.via || "-"}${r.dist != null ? " · d" + r.dist : ""}${r.flip ? " · flipped" : ""}`.slice(0, 40), x, y + Math.round(cw * 977 / 700) + 50);
     g.fillText(`read "${(r.name_read || "").slice(0, 24)}"${r.review ? " · " + r.review : ""}`.slice(0, 36), x, y + Math.round(cw * 977 / 700) + 72);
   }
   if (shots.length) {
