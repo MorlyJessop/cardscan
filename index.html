@@ -118,7 +118,7 @@ html.bigtext{font-size:112%}
 </head>
 <body>
 <main>
-<h1><span>cardscan</span><span><button id="btnTour" type="button" style="margin-right:6px">?</button><button id="btnSettings" type="button">Settings</button></span></h1>
+<h1><span>cardscan <span class="small" id="appVer" style="color:#5b6672;font-weight:400"></span></span><span><button id="btnTour" type="button" style="margin-right:6px">?</button><button id="btnSettings" type="button">Settings</button></span></h1>
 
 <section class="panel hidden" id="settings">
   <h2>Settings</h2><div class="small" style="margin-bottom:8px">Tap a heading to open or close a group.</div><details class="grp-set" open><summary><h3 style="display:inline">Scanning, lists and AI</h3></summary>
@@ -157,6 +157,7 @@ html.bigtext{font-size:112%}
   <div class="dbstat"><span id="dbStat">Not loaded</span><span id="hashStat"></span></div>
   <div class="dbstat"><span id="ocrStat">Text reader: loads on first use</span></div>
   <div class="small" id="coverage" style="margin-top:6px"></div>
+  <div class="row"><button class="ghost" id="btnReport2" type="button">📤 Report for Claude</button><span class="small">makes one picture of the last scans + what the app decided — share it into the Claude chat and I can see exactly what went wrong</span></div>
   <div class="row"><button class="ghost" id="btnRestoreCleared" type="button">Restore the inventory I cleared</button><span class="small" id="clearedNote"></span></div>
   <div class="row"><button class="ghost" id="btnDb" type="button">Update database</button><button class="ghost" id="btnReprice" type="button">Re-price inventory</button></div>
   <div class="small" style="margin-top:8px">Build <span class="mono">cards.json.gz</span> (prices for every printing) and <span class="mono">hashes.json.gz</span> (fingerprints for your sets) with <span class="mono">build_db.py</span> and put them next to this page. With them, pricing is instant and offline, and cards from fingerprinted sets are identified without any API call.</div>
@@ -177,7 +178,7 @@ html.bigtext{font-size:112%}
 <div class="wide"><section class="panel hits hidden" id="hits"><h2>At or above $<span id="thrLabel">1</span> in this scan</h2><div id="hitList"></div></section>
 <section class="panel hidden" id="results"><h2>This scan <span class="sub">(tap a card for details, to fix it, or to ask AI)</span></h2>
   <div class="row hidden" id="aiAllRow"><button class="ghost" id="btnAiAll" type="button">Identify unknown cards with AI</button><span class="small" id="aiAllNote"></span></div>
-  <div class="row"><button id="btnReview" type="button">Review this scan</button><button class="ghost" id="btnFixAll" type="button">Fix printings</button><button class="ghost" id="btnAddByName" type="button">＋ Add a card by name</button><button class="ghost" id="btnShareScan" type="button">Share as text</button><button class="danger" id="btnDeleteScan" type="button">Delete this scan</button></div>
+  <div class="row"><button id="btnReview" type="button">Review this scan</button><button class="ghost" id="btnReport" type="button">📤 Report for Claude</button><button class="ghost" id="btnFixAll" type="button">Fix printings</button><button class="ghost" id="btnAddByName" type="button">＋ Add a card by name</button><button class="ghost" id="btnShareScan" type="button">Share as text</button><button class="danger" id="btnDeleteScan" type="button">Delete this scan</button></div>
   <div id="list"></div>
   <div class="legend"><span><i style="background:var(--ok)"></i>identified &amp; priced</span><span><i style="background:var(--gold)"></i>hit</span><span><i style="background:#f59e0b"></i>identified, price or printing unsure</span><span><i style="background:var(--bad)"></i>unknown — tap it</span></div></section>
 
@@ -1804,6 +1805,47 @@ $("tourNext").onclick = () => { if (tourAt >= TOUR.length - 1) { $("tour").class
 $("tourPrev").onclick = () => { if (tourAt > 0) { tourAt--; tourShow(); } };
 $("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour").classList.remove("open"); settings.tourDone = true; saveSettings(); } });
 if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
+
+/* ================= a one-tap report I can actually debug from ================= */
+const APP_VERSION = "v21";
+$("appVer").textContent = APP_VERSION;
+function reportText() {
+  const s = settings;
+  return [`cardscan ${APP_VERSION} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
+    $("dbStat").textContent, $("hashStat").textContent, $("ocrStat").textContent,
+    `learned ${Object.keys(learned).length} · strictness ${s.strict} · ${s.fast ? "FAST" : "normal"} · mode ${s.mode} · camera ${s.camera && s.camera.trained ? "trained " + s.camera.trained : "NOT trained"} · languages ${s.langs.join(",") || "en"}`,
+    `inventory ${inventory.length} rows · piles: hits→${s.autoList || "-"} foils→${s.foilList || "-"} rares→${s.rareList || "-"} rest→${s.bulkList || "-"}`].join("\n");
+}
+const imgLoad = src => new Promise(res => { if (!src) return res(null); const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+async function buildReport() {
+  const rows = inventory.filter(r => lastScanIds.includes(r.id)).slice(0, 12);
+  const W = 1080, cw = 340, ch = 560, cols = 3, header = 170;
+  const c = document.createElement("canvas"); c.width = W; c.height = header + Math.max(1, Math.ceil(rows.length / cols)) * ch + 20; const g = c.getContext("2d");
+  g.fillStyle = "#14171c"; g.fillRect(0, 0, c.width, c.height); g.fillStyle = "#e8e6df"; g.font = "600 26px system-ui";
+  reportText().split("\n").forEach((ln, i) => { g.font = i ? "20px system-ui" : "600 26px system-ui"; g.fillText(ln.slice(0, 90), 16, 34 + i * 26); });
+  for (let k = 0; k < rows.length; k++) {
+    const r = rows[k], x = 12 + (k % cols) * (cw + 16), y = header + Math.floor(k / cols) * ch;
+    const mine = await imgLoad(await cropStore.get(r.id)); if (mine) g.drawImage(mine, x, y, cw, Math.round(cw * 977 / 700));
+    else { g.fillStyle = "#242a31"; g.fillRect(x, y, cw, Math.round(cw * 977 / 700)); }
+    g.fillStyle = r.unknown ? "#ff7b7b" : "#e8e6df"; g.font = "600 20px system-ui";
+    g.fillText((r.unknown ? "UNKNOWN" : r.name).slice(0, 30), x, y + Math.round(cw * 977 / 700) + 26);
+    g.fillStyle = "#9aa3ad"; g.font = "17px system-ui";
+    g.fillText(`${r.unknown ? "" : r.set + " #" + r.number + " · "}via ${r.via || "-"}${r.dist != null ? " · dist " + r.dist : ""}`.slice(0, 34), x, y + Math.round(cw * 977 / 700) + 50);
+    g.fillText(`read "${(r.name_read || "").slice(0, 24)}"${r.review ? " · " + r.review : ""}`.slice(0, 36), x, y + Math.round(cw * 977 / 700) + 72);
+  }
+  return c;
+}
+async function sendReport() {
+  try { const c = await buildReport(); const dataUrl = c.toDataURL("image/jpeg", 0.85);
+    const bin = atob(dataUrl.split(",")[1]); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const file = new File([bytes], `cardscan-report-${today()}.jpg`, { type: "image/jpeg" });
+    const text = reportText();
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: "cardscan report", text }); return; }
+    download(file.name, file); try { await navigator.clipboard.writeText(text); } catch (e) {}
+    setStatus("Report saved as a picture (and the summary copied) — attach it in the Claude chat.");
+  } catch (e) { if (!/abort/i.test(e && e.name || "")) setStatus("Could not build the report — " + (e.message || e), true); }
+}
+$("btnReport").onclick = sendReport; $("btnReport2").onclick = sendReport;
 
 /* ================= swipe: left = delete (with undo), right = rescan ================= */
 let toastTimer = null, lastDeleted = null;
