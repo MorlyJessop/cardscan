@@ -1432,6 +1432,9 @@ function drawOverlay(quad, state) {
   const P = q => q.map(p => ({ x: p.x * m.s + m.ox, y: p.y * m.s + m.oy }));
   const poly = (q, color, width, dash) => { g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.beginPath(); q.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.stroke(); g.setLineDash([]); };
   if (singleLike() || live.retry) { poly(P(guideQuad()), "rgba(255,255,255,.25)", 1.5, [8, 8]);
+    if (live.liveGuess && live.lastQuad && db.loaded) { const nm = nameOfId(live.liveGuess.id); if (nm) { const pts = P(live.lastQuad); const bx = Math.min(...pts.map(p => p.x)), by = Math.max(...pts.map(p => p.y));
+      g.font = "600 15px system-ui"; const txt = `${nm.split(" // ")[0]}  ${Math.max(0, Math.round(100 - live.liveGuess.dist / 2.56))}%`; const w = g.measureText(txt).width + 14;
+      g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(bx, Math.min(m.ch - 24, by + 6), w, 22); g.fillStyle = "#fff"; g.fillText(txt, bx + 7, Math.min(m.ch - 8, by + 22)); } }
     if (quad) poly(P(quad), trackColor[state] || (state === "lock" ? "#e0b64a" : "rgba(255,255,255,.8)"), state === "lock" ? 5 : 3); }
   if (live.mode === "sweep") for (const t of live.tracks) { if (t.item) t.status = itemStatus(t.item); const q = P(t.quad); poly(q, trackColor[t.status] || "#fff", t.status === "pending" ? 2 : 3, t.status === "reading" ? [6, 6] : null);
     const r = t.item && t.item.row;
@@ -1457,6 +1460,8 @@ function liveLoop(t) {
     if (!live.armed && !quad) { if ((live.frameNo = (live.frameNo || 0) + 1) % P().emptyEvery === 0) { const gq = guideQuad(), gc = regionOf(gctx, gq, s); live.emptyFrames = gc && !looksLikeCard(gc, false).ok ? live.emptyFrames + 1 : 0; if (live.emptyFrames >= 2) { live.armed = true; live.emptyFrames = 0; } } }
     if (quad) quad = quad.map(p => ({ x: p.x / s, y: p.y / s }));
     if (quad) sheenPush(gctx, quad, s); else if (live.sheen && live.sheen.length && motion > 20) sheenReset();
+    if (quad && live.mode !== "lookup" && live.armed && db.hashIds && db.hashIds.length && live.tracker.state !== "cooldown") liveScan(quad, gctx, s);
+    if (!quad) live.votes = [];
     live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev === "held" && live.items[0] ? itemStatus(live.items[0]) : ev);
 
     if (ev === "lock") { live.hoverCool = true; liveCapture(quad, null, live.retry); }
@@ -1545,13 +1550,36 @@ async function hiResFrame() {                 // a real photo from the camera wh
     return { canvas: c, photo: true };
   } catch (e) { live.noIC = true; return { canvas: full, photo: false }; }
 }
+/* Instant identification: every frame with a card outline is matched against the fingerprints (a few ms each). When two frames in a
+   row agree — one of them confidently — the card is added, usually well under half a second after it appears. Glare frames simply
+   lose the vote instead of ruining a one-shot capture. The photo/OCR path stays as the fallback when fingerprints can't settle. */
+function liveScan(quad, gctx, s) {
+  const t = performance.now(); if (live.scanBusy || t - (live.scanT || 0) < 80) return; live.scanT = t; live.scanBusy = true;
+  try {
+    const cv = live.cv, det = live.det; const mat = cv.imread(gctx.canvas); let m;
+    try { m = det.warpCard(mat, quad.map(p => ({ x: p.x * s, y: p.y * s }))); } finally { mat.delete(); }
+    if (!live.scanCanvas) { live.scanCanvas = document.createElement("canvas"); live.scanCanvas.__scan = true; }
+    try { cv.imshow ? cv.imshow(live.scanCanvas, m) : null; } finally { m.delete(); }
+    const hash = hashCard(live.scanCanvas); const k = hashKnown(hash);
+    const votes = live.votes = (live.votes || []); votes.push(k ? { id: k.id, sure: k.sure, dist: k.dist, hash, twin: k.twin } : null); if (votes.length > 6) votes.shift();
+    live.liveGuess = k ? { id: k.id, dist: k.dist } : null;
+    const last = votes[votes.length - 1], prev = votes[votes.length - 2];
+    if (last && prev && last.id === prev.id && (last.sure || prev.sure) && !live.busy) {
+      live.votes = []; live.hoverCool = true; live.tracker.state = "cooldown";
+      liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: Math.min(last.dist, prev.dist), hash: last.sure ? last.hash : prev.hash, sure: true, twin: last.twin || prev.twin });
+    } else if (last && prev && votes.length >= 3 && last.id === prev.id && votes[votes.length - 3] && votes[votes.length - 3].id === last.id && !live.busy) {
+      live.votes = []; live.hoverCool = true; live.tracker.state = "cooldown";
+      liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: last.dist, hash: last.hash, sure: false, twin: last.twin });
+    }
+  } catch (e) {} finally { live.scanBusy = false; }
+}
 function regionOf(gctx, quad, s) {           // small canvas of a quad's bounding box in the grab frame
   const xs = quad.map(p => p.x * s), ys = quad.map(p => p.y * s); const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)));
   const w = Math.min(gctx.canvas.width - x0, Math.ceil(Math.max(...xs)) - x0), h = Math.min(gctx.canvas.height - y0, Math.ceil(Math.max(...ys)) - y0); if (w < 12 || h < 16) return null;
   const c = document.createElement("canvas"); c.width = 70; c.height = 98; c.getContext("2d").drawImage(gctx.canvas, x0, y0, w, h, 0, 0, 70, 98); return c;
 }
 function handInGuide(gctx, s) { const c = regionOf(gctx, guideQuad(), s); return !!c && cardness(c).skin > 0.15; }
-async function liveCapture(quad, track, retryItem, hover, manual) {
+async function liveCapture(quad, track, retryItem, hover, manual, preId) {
   if (!quad || !live.on) return;
   const auto = !track && !manual && !retryItem && !live.rescan;
   if (auto) {                                      // after a capture: not again while the hand is still moving that card
@@ -1561,7 +1589,7 @@ async function liveCapture(quad, track, retryItem, hover, manual) {
   if (!track) { sound.lock(); live.tracker.state = "cooldown"; }
   const rescan = live.rescan; live.rescan = null;
   const cv = live.cv, det = live.det;
-  const shot = await hiResFrame();
+  const shot = preId ? { canvas: full, photo: false } : await hiResFrame();
   let crop, thumb, hash, hashes = [];
   try {
     let q = quad, src = shot.canvas, found = null;
@@ -1572,7 +1600,7 @@ async function liveCapture(quad, track, retryItem, hover, manual) {
     // a short burst: the sharpest frame is read, every frame's fingerprint is tried (glare rarely ruins all of them)
     const cropOf = c => { const mat = cv.imread(c); const m = det.warpCard(mat, q); const out = matToCanvas(cv, m); m.delete(); mat.delete(); return out; };
     const cands = [cropOf(src)];
-    if (!shot.photo && !track) { for (let i = 1; i < P().frames; i++) { await sleep(60); const f2 = live.burst || (live.burst = document.createElement("canvas")); f2.__burst = true; f2.width = video.videoWidth; f2.height = video.videoHeight; f2.getContext("2d").drawImage(video, 0, 0); try { cands.push(cropOf(f2)); } catch (e) {} } }
+    if (!shot.photo && !track && !preId) { for (let i = 1; i < P().frames; i++) { await sleep(60); const f2 = live.burst || (live.burst = document.createElement("canvas")); f2.__burst = true; f2.width = video.videoWidth; f2.height = video.videoHeight; f2.getContext("2d").drawImage(video, 0, 0); try { cands.push(cropOf(f2)); } catch (e) {} } }
     const sharp = cands.map(c => sharpness(c.getContext("2d"), Math.round(c.width * 0.08), Math.round(c.height * 0.03), Math.round(c.width * 0.84), Math.round(c.height * 0.09)));
     let bi = 0; for (let i = 1; i < cands.length; i++) if (sharp[i] > sharp[bi]) bi = i;
     crop = cands[bi]; hashes = cands.map(hashCard); hash = hashes[bi];
@@ -1582,7 +1610,7 @@ async function liveCapture(quad, track, retryItem, hover, manual) {
   const looks = looksLikeCard(crop, hadOutline);
   if (!looks.ok) { setHint(looks.why); sound.bad(); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
   if (auto && !live.armed && live.lastHash && hamming(live.lastHash, hash) <= 60) { setHint("Same card — move it fully away to count another copy, or tap +1 same"); return; }
-  if (!track && !rescan) { live.armed = false; live.lastHash = hash; live.lastCaptureT = Date.now(); }
+  if (!track && !rescan) { live.armed = false; live.lastHash = hash; live.lastCaptureT = Date.now(); live.votes = []; live.liveGuess = null; }
   const pos = track ? positionWords(track.cx / grab.width, track.cy / grab.height) : "middle";
   // sweep: a card already scanned this session (same fingerprint): another copy if it is lying beside the first one (both in view), otherwise just the same card again
   const seen = track && !retryItem ? live.seen.find(s => hamming(s.hash, hash) <= 60) : null;
@@ -1596,6 +1624,7 @@ async function liveCapture(quad, track, retryItem, hover, manual) {
   try {
     let row;
     if (seen && seen.item.row) { row = Object.assign({}, seen.item.row, { id: newId(), ts: now(), qty: 1 }); if (row.unknown) { await cropStore.put(row.id, await cropStore.get(seen.item.row.id)); } }
+    else if (preId) { row = await knownRow({ id: preId.id }, preId.hash, { foil: $("liveFoil").checked, photo: "live", list: live.listName }); if (row) { row.dist = preId.dist; if (preId.twin) row.review = [row.review, "another printing of this card looks almost the same — tap to check the version"].filter(Boolean).join("; "); if (preId.sure && preId.dist <= acceptDist() - 10 && !learned[preId.hash]) learn(preId.hash, preId.id); } else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: "live", list: live.listName, hashes }); }
     else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName, hashes });
     if (!track && !$("liveFoil").checked && !row.unknown) {          // foil guess from the shimmer seen while hovering (single/stand/lookup)
       const sc = sheenScore(live.sheen), fd = foilDecide(sc); row.sheen = sc;
