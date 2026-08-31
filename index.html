@@ -772,6 +772,15 @@ function learn(hex, id) { if (!hex || !id) return; learned[hex] = id; const ks =
 /* Name-aware acceptance (tuned on real phone photos vs. Scryfall fingerprints): the runner-up that matters is the nearest card with a
    DIFFERENT name — two printings of the same card being close is not a doubt about the card. "sure" learns; "likely" identifies but
    doesn't teach. Printings of the same name within 10 bits of each other are flagged so the version can be checked. */
+function rot180(canvas) {                     // a copy of the picture turned upside down (pixel-exact, no transforms needed)
+  try {
+    const w = canvas.width, h = canvas.height, g = canvas.getContext("2d");
+    const d = g.getImageData(0, 0, w, h), out = new ImageData(w, h);
+    const a = d.data, b = out.data, n = w * h;
+    for (let i = 0; i < n; i++) { const j = (n - 1 - i) * 4, k = i * 4; b[k] = a[j]; b[k + 1] = a[j + 1]; b[k + 2] = a[j + 2]; b[k + 3] = a[j + 3]; }
+    const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").putImageData(out, 0, 0); return c;
+  } catch (e) { return null; }
+}
 function hashKnown(hex) {
   /* Bands re-tuned on the full 99,039-card database against real phone photos: with this many fingerprints the nearest WRONG card
      sits around 145-200 for any picture, so wide margins reject correct answers. sure ≤ accept & clear of a different name by 10;
@@ -998,11 +1007,11 @@ async function verifySet(row, cropCanvas, twin) {
   try {
     if (!row || row.unknown || !db.loaded || settings.ocrMode === "off" || ocr.failed) return;
     const prints = localPrints(row.name, null, null).filter(c => c.lang === "en" || settings.langs.includes(c.lang));
-    if (prints.length < 2) return;
+    if (prints.length < 2 || prints.length > 30) return;                       // basics and the like: the artwork match IS the set signal
     if (!P().ocrFull) { if (twin) row.review = [row.review, `${prints.length} sets share this card — check the set`].filter(Boolean).join("; "); return; }
     const w = await ocrWorker(); if (!w) return;
     const rt0 = performance.now();
-    const botText = (await readRegion(w, regionCanvas(cropCanvas, 0.04, 0.90, 0.52, 0.075, 3, true))).toUpperCase();
+    const botText = (await readRegion(w, regionCanvas(cropCanvas, 0.02, 0.895, 0.58, 0.09, 4, true))).toUpperCase();
     trc(`set line read in ${Math.round(performance.now() - rt0)}ms: "${botText.slice(0, 28)}"`);
     const toks = botText.split(/[^A-Z0-9]+/).filter(x => x.length >= 3 && x.length <= 5);
     const sets = Array.from(new Set(prints.map(c => c.set.toUpperCase())));
@@ -1016,7 +1025,19 @@ async function verifySet(row, cropCanvas, twin) {
         rowFromCard(row, pick, row.foil); row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|close call[^;]*|\d+ sets share[^;]*)/g, "").trim();
         row.notes = [row.notes, `set read from the card: ${bestSet}`].filter(Boolean).join("; ");
       } else { row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|\d+ sets share[^;]*)/g, "").trim(); }
-    } else if (twin) { row.review = [row.review, `${sets.length} sets share this card — couldn't read the set line, tap to check`].filter(Boolean).join("; "); }
+    } else {
+      const numM = botText.match(/\b(\d{1,4})\s*\/\s*\d{1,4}\b/) || botText.match(/\b0*(\d{1,4})\b/);
+      const num = numM ? String(parseInt(numM[1])) : "";
+      const byNum = num ? prints.filter(c => String(parseInt(c.collector_number)) === num) : [];
+      if (byNum.length === 1) {
+        if (byNum[0].set.toUpperCase() !== (row.set || "").toUpperCase() || byNum[0].collector_number !== row.number) {
+          trc(`printing corrected by the number on the card: ${row.set}#${row.number} → ${byNum[0].set.toUpperCase()}#${byNum[0].collector_number}`);
+          rowFromCard(row, byNum[0], row.foil);
+        }
+        row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|close call[^;]*|\d+ sets share[^;]*)/g, "").trim();
+        row.notes = [row.notes, `number read from the card: ${num}`].filter(Boolean).join("; ");
+      } else if (twin && prints.length <= 12) { row.review = [row.review, `${sets.length} sets share this card — couldn't read the set line, tap to check`].filter(Boolean).join("; "); }
+    }
   } catch (e) {}
 }
 /* ================= on-phone text reading (Tesseract) ================= */
@@ -1646,8 +1667,9 @@ function frameMotion(gctx) {                 // mean absolute change between thi
   const d = t.getContext("2d").getImageData(0, 0, 48, 27).data, g = new Float32Array(48 * 27); for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
   let m = 0; if (live.prevGray) { for (let i = 0; i < g.length; i++) m += Math.abs(g[i] - live.prevGray[i]); m /= g.length; } live.prevGray = g; return m;
 }
+function videoFrame() { full.width = video.videoWidth; full.height = video.videoHeight; full.getContext("2d").drawImage(video, 0, 0); return { canvas: full, photo: false }; }
 async function hiResFrame() {                 // a real photo from the camera when the browser allows it (Android); else the video frame
-  full.width = video.videoWidth; full.height = video.videoHeight; full.getContext("2d").drawImage(video, 0, 0);
+  videoFrame();
   if (live.mode === "sweep" || live.noIC || !window.ImageCapture || !live.track || !P().photo) return { canvas: full, photo: false };
   try {
     live.ic = live.ic || new ImageCapture(live.track);
@@ -1702,15 +1724,16 @@ function liveScan(quad, gctx, s) {
     try { cv.imshow ? cv.imshow(live.scanCanvas, m) : null; } finally { m.delete(); }
     const looks = looksLikeCard(live.scanCanvas, true);
     if (!looks.ok) { (live.votes = live.votes || []).push(null); if (live.votes.length > 6) live.votes.shift(); live.liveGuess = null; return; }
-    const hash = hashCard(live.scanCanvas); const k = hashKnown(hash);
-    const votes = live.votes = (live.votes || []); votes.push(k ? { id: k.id, sure: k.sure, dist: k.dist, hash, twin: k.twin, close: k.close } : null); if (votes.length > 6) votes.shift();
+    let hash = hashCard(live.scanCanvas); let k = hashKnown(hash), flip = false;
+    if (!k) { const r = rot180(live.scanCanvas); if (r) { const h2 = hashCard(r); const k2 = hashKnown(h2); if (k2) { k = k2; hash = h2; flip = true; trc("card is upside down — matched after turning the picture"); } } }
+    const votes = live.votes = (live.votes || []); votes.push(k ? { id: k.id, sure: k.sure, dist: k.dist, hash, twin: k.twin, close: k.close, flip } : null); if (votes.length > 6) votes.shift();
     live.liveGuess = k ? { id: k.id, dist: k.dist } : null;
     const seeNow = k ? `${nameOfId(k.id)} d=${k.dist} m=${k.second - k.dist}${k.sure ? " sure" : k.close ? " close" : ""}` : (looks.ok ? "no fingerprint within range" : `not card-like (${looks.why ? looks.why.slice(0, 40) : ""})`);
     if (seeNow !== live.lastSee) { live.lastSee = seeNow; trc(`see: ${seeNow}`); }
     const last = votes[votes.length - 1], prev = votes[votes.length - 2];
     if (last && prev && last.id === prev.id && (last.sure || prev.sure) && !live.busy) {
       live.votes = []; live.hoverCool = true; live.tracker.state = "cooldown"; trc(`two frames agree → adding without a photo`);
-      liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: Math.min(last.dist, prev.dist), hash: last.sure ? last.hash : prev.hash, sure: true, twin: last.twin || prev.twin, close: last.close && prev.close });
+      liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: Math.min(last.dist, prev.dist), hash: last.sure ? last.hash : prev.hash, sure: true, twin: last.twin || prev.twin, close: last.close && prev.close, flip: last.flip || prev.flip });
     } else if (last && prev && votes.length >= 3 && last.id === prev.id && votes[votes.length - 3] && votes[votes.length - 3].id === last.id && !live.busy) {
       live.votes = []; live.hoverCool = true; live.tracker.state = "cooldown";
       liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: last.dist, hash: last.hash, sure: false, twin: last.twin });
@@ -1734,7 +1757,7 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
   if (!track) { sound.lock(); live.tracker.state = "cooldown"; }
   const rescan = live.rescan; live.rescan = null;
   const cv = live.cv, det = live.det;
-  const shot = preId ? { canvas: full, photo: false } : await hiResFrame();
+  const shot = preId ? videoFrame() : await hiResFrame();
   if (!preId) trc(`picture: ${shot.photo ? "full-res photo" : "video frame"} ${shot.canvas.width}x${shot.canvas.height} (${Math.round(performance.now() - cap0)}ms)`);
   let crop, thumb, hash, hashes = [];
   try {
@@ -1755,6 +1778,8 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7);
     var hadOutline = !!found || (!hover && !shot.photo); }
   catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
+  if (preId && preId.flip) { const r = rot180(crop); if (r) { crop = r; hash = hashCard(crop); } }
+  else if (!preId && !hashKnown(hash)) { const r = rot180(crop); if (r) { const h2 = hashCard(r); if (hashKnown(h2)) { crop = r; hash = h2; hashes = [h2]; trc("card is upside down — turned the picture before reading"); } } }
   const looks = looksLikeCard(crop, hadOutline);
   if (!looks.ok) {
     if (track) { track.captured = false; track.status = "pending"; }
@@ -1812,7 +1837,7 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     // same card as one already in this session -> one row, more copies
     const twin = !retryItem && live.items.find(i => i !== item && i.row && sameCard(i.row, row));
     if (twin) { twin.row.qty = qtyOf(twin.row) + 1; live.items = live.items.filter(i => i !== item); live.items = [twin, ...live.items.filter(i => i !== twin)]; item.row = twin.row; item.merged = true; saveInv(); if (track) { track.item = twin; track.status = rowStatus(twin.row); } }
-    else { inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb; if (!row.unknown && !row.review) cropStore.put(row.id, crop.toDataURL("image/jpeg", 0.8)).then(() => { row.hasCrop = true; }); else row.hasCrop = true;
+    else { inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb; cropStore.put(row.id, crop.toDataURL("image/jpeg", 0.8)).then(() => { row.hasCrop = true; });
     trc(row.unknown ? `added: UNKNOWN (${Math.round(performance.now() - cap0)}ms total)` : `added: ${row.name} ${row.set}#${row.number} via ${row.via}${row.dist != null ? " d=" + row.dist : ""}${row.review ? " ⚠ " + row.review.slice(0, 40) : ""} (${Math.round(performance.now() - cap0)}ms total)`); trcSnap(row.unknown ? "added UNKNOWN" : "added " + row.name.slice(0, 14), crop); }
     const st = rowStatus(row); if (track && !twin) track.status = st;
     const pile = settings.sortAssist === "on" && !row.unknown && row.list !== live.listName ? row.list : (settings.sortAssist === "on" && !row.unknown ? (settings.bulkList || live.listName) : "");
@@ -1968,13 +1993,13 @@ $("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour
 if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
 
 /* ================= a one-tap report I can actually debug from ================= */
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 $("appVer").textContent = APP_VERSION;
 function reportText() {
   const s = settings;
   return [`cardscan ${APP_VERSION} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
     $("dbStat").textContent, $("hashStat").textContent, $("ocrStat").textContent,
-    `learned ${Object.keys(learned).length} · strictness ${s.strict} · ${s.fast ? "FAST" : "normal"} · mode ${s.mode} · camera ${s.camera && s.camera.trained ? "trained " + s.camera.trained : "NOT trained"} · languages ${s.langs.join(",") || "en"}`,
+    `learned ${Object.keys(learned).length} · strictness ${s.strict} · ${s.fast ? "FAST" : "normal"} · mode ${s.mode} · focus ${s.camera && s.camera.focusDistance != null ? "locked " + (+s.camera.focusDistance).toFixed(2) : "auto"} · languages ${s.langs.join(",") || "en"}`,
     `inventory ${inventory.length} rows · piles: hits→${s.autoList || "-"} foils→${s.foilList || "-"} rares→${s.rareList || "-"} rest→${s.bulkList || "-"}`].join("\n");
 }
 const imgLoad = src => new Promise(res => { if (!src) return res(null); const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
