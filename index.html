@@ -702,7 +702,6 @@ function renderSetup() {
     ["Price database", db.loaded ? `loaded (${db.cards.length.toLocaleString()} printings)` : "not loaded — build cards.json.gz with build_db.py and upload it", !!db.loaded, "btnDb"],
     ["Fingerprints", db.hashIds && db.hashIds.length ? `${db.hashIds.length.toLocaleString()} cards` : "none — run build_db.py --hash-sets all and upload hashes.json.gz", !!(db.hashIds && db.hashIds.length), "btnDb"],
     ["Text reader", settings.ocrMode === "off" ? "off" : ocr.failed ? "failed to load" : "on", settings.ocrMode !== "off" && !ocr.failed, "btnSettings"],
-    ["Camera trained", settings.camera && settings.camera.trained && settings.camera.trained !== "skipped" ? `yes (${settings.camera.trained})` : "not yet — opens when you first scan", !!(settings.camera && settings.camera.trained && settings.camera.trained !== "skipped"), "btnLive"],
     ["Piles", settings.autoList || settings.foilList || settings.bulkList || settings.rareList ? `hits → ${settings.autoList || "scan list"}${settings.foilList ? ", foils → " + settings.foilList : ""}${settings.rareList ? ", rares → " + settings.rareList : ""}${settings.bulkList ? ", rest → " + settings.bulkList : ""}` : "not set — one tap sets up Sell / Foils / Bulk", !!(settings.autoList || settings.bulkList), "quickPiles"],
     ["Google Drive", settings.drive && settings.drive.connected ? `connected${settings.drive.lastBackup ? ", last backup " + settings.drive.lastBackup.slice(0, 16).replace("T", " ") : ""}` : "not connected — backups stay on the phone only", !!(settings.drive && settings.drive.connected), "btnDriveConnect"],
   ];
@@ -774,12 +773,17 @@ function learn(hex, id) { if (!hex || !id) return; learned[hex] = id; const ks =
    DIFFERENT name — two printings of the same card being close is not a doubt about the card. "sure" learns; "likely" identifies but
    doesn't teach. Printings of the same name within 10 bits of each other are flagged so the version can be checked. */
 function hashKnown(hex) {
-  const top = nearestHashes(hex, 6); if (!top.length) return null;
+  /* Bands re-tuned on the full 99,039-card database against real phone photos: with this many fingerprints the nearest WRONG card
+     sits around 145-200 for any picture, so wide margins reject correct answers. sure ≤ accept & clear of a different name by 10;
+     likely ≤ accept+37 with margin ≥ 12; a thin margin (3-11) is accepted but flagged "close call" for the review pass. Two
+     printings of the same card within 25 bits usually share the artwork — the set line on the card settles those. */
+  const top = nearestHashes(hex, 8); if (!top.length) return null;
   const d1 = top[0].dist, n1 = nameOfId(top[0].id); let d2 = 999, twin = false;
-  for (const t of top.slice(1)) { const n = nameOfId(t.id); if (n1 && n === n1) { if (t.dist - d1 <= 10) twin = true; continue; } d2 = t.dist; break; }
-  const A = acceptDist();
-  if (d1 <= A && d2 - d1 >= HASH_MARGIN) return { id: top[0].id, dist: d1, second: d2, sure: true, twin };
-  if (d1 <= A + 30 && d2 - d1 >= 25) return { id: top[0].id, dist: d1, second: d2, sure: false, twin };
+  for (const t of top.slice(1)) { const n = nameOfId(t.id); if (n1 && n === n1) { if (t.dist - d1 <= 25) twin = true; continue; } d2 = t.dist; break; }
+  const A = acceptDist(), m = d2 - d1;
+  if (d1 <= A + 3 && m >= 10) return { id: top[0].id, dist: d1, second: d2, sure: true, twin };
+  if (d1 <= A + 37 && m >= 12) return { id: top[0].id, dist: d1, second: d2, sure: false, twin };
+  if (d1 <= A + 37 && m >= 3) return { id: top[0].id, dist: d1, second: d2, sure: false, twin, close: true };
   return null;
 }
 
@@ -970,6 +974,51 @@ function knownRow(m, hash, opts) {
     const row = rowFromCard({ id: newId(), ts: now(), photo: opts.photo, name_read: card.name, notes: "", review: "", hash, via: "fingerprint", cond: live.on ? (settings.cond || "NM") : "NM" }, card, opts.foil);
     row.list = pileFor(row, opts.list); return row; });
 }
+/* ================= flight recorder: every decision the scanner makes, with timings ================= */
+/* Always on and nearly free: short text lines in a ring buffer, plus small snapshots of what the camera saw at notable
+   moments. The 📤 report shares both, so "why was it slow / why did it grab that" is readable line by line. */
+function trc(msg) {
+  const t = live.t0 ? ((performance.now() - live.t0) / 1000).toFixed(2) : "-";
+  (live.trace = live.trace || []).push(`[+${t}s] ${msg}`); if (live.trace.length > 1500) live.trace.shift();
+}
+function trcSnap(tag, srcCanvas, sx, sy, sw, sh) {
+  try {
+    live.snapT = live.snapT || {}; const now2 = performance.now(); if (live.snapT[tag] && now2 - live.snapT[tag] < 1500) return; live.snapT[tag] = now2;
+    const t = document.createElement("canvas"); const w = 150, h = Math.max(24, Math.round(w * (sh || srcCanvas.height) / (sw || srcCanvas.width)));
+    t.width = w; t.height = Math.min(h, 210);
+    t.getContext("2d").drawImage(srcCanvas, sx || 0, sy || 0, sw || srcCanvas.width, sh || srcCanvas.height, 0, 0, t.width, t.height);
+    const tt = live.t0 ? ((performance.now() - live.t0) / 1000).toFixed(1) : "-";
+    (live.traceShots = live.traceShots || []).push({ label: `+${tt}s ${tag}`, img: t.toDataURL("image/jpeg", 0.7) });
+    if (live.traceShots.length > 24) live.traceShots.shift();
+  } catch (e) {}
+}
+/* When the same card exists in several sets with the same artwork, the picture alone can't pick the set — the code printed
+   bottom-left can. Reads it, switches to that printing if it differs, and marks the row when it can't be read. */
+async function verifySet(row, cropCanvas, twin) {
+  try {
+    if (!row || row.unknown || !db.loaded || settings.ocrMode === "off" || ocr.failed) return;
+    const prints = localPrints(row.name, null, null).filter(c => c.lang === "en" || settings.langs.includes(c.lang));
+    if (prints.length < 2) return;
+    if (!P().ocrFull) { if (twin) row.review = [row.review, `${prints.length} sets share this card — check the set`].filter(Boolean).join("; "); return; }
+    const w = await ocrWorker(); if (!w) return;
+    const rt0 = performance.now();
+    const botText = (await readRegion(w, regionCanvas(cropCanvas, 0.04, 0.90, 0.52, 0.075, 3, true))).toUpperCase();
+    trc(`set line read in ${Math.round(performance.now() - rt0)}ms: "${botText.slice(0, 28)}"`);
+    const toks = botText.split(/[^A-Z0-9]+/).filter(x => x.length >= 3 && x.length <= 5);
+    const sets = Array.from(new Set(prints.map(c => c.set.toUpperCase())));
+    let bestSet = null, bd = 9; for (const t of toks) for (const s of sets) { const d = editDist(t, s); if (d < bd) { bd = d; bestSet = s; } }
+    if (bestSet && bd === 0) {
+      if (bestSet !== (row.set || "").toUpperCase()) {
+        const cands = prints.filter(c => c.set.toUpperCase() === bestSet);
+        const numM = botText.match(/\b(\d{1,4})\s*\/\s*\d{1,4}\b/); const num = numM ? numM[1] : "";
+        const pick = cands.find(c => String(c.collector_number) === String(parseInt(num))) || cands[0];
+        trc(`set corrected by the card itself: ${row.set}#${row.number} → ${bestSet}#${pick.collector_number}`);
+        rowFromCard(row, pick, row.foil); row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|close call[^;]*|\d+ sets share[^;]*)/g, "").trim();
+        row.notes = [row.notes, `set read from the card: ${bestSet}`].filter(Boolean).join("; ");
+      } else { row.review = (row.review || "").replace(/;?\s*(another printing[^;]*|\d+ sets share[^;]*)/g, "").trim(); }
+    } else if (twin) { row.review = [row.review, `${sets.length} sets share this card — couldn't read the set line, tap to check`].filter(Boolean).join("; "); }
+  } catch (e) {}
+}
 /* ================= on-phone text reading (Tesseract) ================= */
 const ocr = { ready: null, queue: Promise.resolve(), failed: false };
 function ocrStatus(t) { const el = $("ocrStat"); if (el) el.textContent = "Text reader: " + t; }
@@ -1108,9 +1157,9 @@ async function identifyCrop(cropCanvas, opts) {
   let { hash, m, how } = matchCrop(cropCanvas);
   if (!m && opts.hashes && opts.hashes.length > 1) { for (const h of opts.hashes) { if (h === hash) continue; const k = hashKnown(h); if (k) { m = k; hash = h; how = "another frame"; break; } } }
   if (m) { const row = await knownRow(m, hash, opts); if (row) { row.dist = m.dist; if (how) row.notes = [row.notes, `matched ${how}`].filter(Boolean).join("; ");
-      if (m.twin) row.review = [row.review, "another printing of this card looks almost the same — tap to check the version"].filter(Boolean).join("; ");
+      if (m.close) row.review = [row.review, "close call — tap to verify"].filter(Boolean).join("; ");
       if (m.sure && m.dist <= acceptDist() - 10 && !learned[hash]) learn(hash, m.id);      // remember this phone's own picture of the card: next time it matches even closer
-      return row; } }
+      await verifySet(row, cropCanvas, m.twin); return row; } }
   let guesses = null, title = "";
   try {
     const o = await ocrIdentify(cropCanvas);
@@ -1239,6 +1288,43 @@ function flashCard(row, twinRow, pile) {         // big, glanceable confirmation
   $("flashSub").textContent = r.unknown ? "tap the row to fix" : `${money(r.price)}${r.set ? " · " + r.set + " #" + r.number : ""}${r.foil ? " · foil" : ""}${pile ? " · → " + pile : ""}${r.owned_more ? " · +" + r.owned_more + " owned" : ""}`;
   $("flash").classList.remove("hidden"); clearTimeout(flashTimer); flashTimer = setTimeout(() => $("flash").classList.add("hidden"), 1600);
 }
+/* Silent camera manager: no wizard needed. Watches sharpness while a card is in view; if frames stay soft it first nudges the
+   phone's own autofocus, then sweeps the manual focus range itself, locks the best distance, and drops back to autofocus when
+   the scene changes a lot. Exposure: if the title band blows out it steps the exposure down; too dark steps it up. */
+const at = { sharpHist: [], sweeping: false, locked: null, lastAct: 0, evSteps: 0, lastEv: 0, kicked: false };
+function autoTuneStart() { at.sharpHist = []; at.sweeping = false; at.locked = settings.camera && settings.camera.focusDistance != null ? settings.camera.focusDistance : null; at.lastAct = 0; at.evSteps = 0; }
+function autoTuneFrame(sharpNow, blownFrac, darkFrac, motion) {
+  if (!live.track || !live.caps) return;
+  at.sharpHist.push(sharpNow); if (at.sharpHist.length > 12) at.sharpHist.shift();
+  const soft = at.sharpHist.length >= 8 && at.sharpHist.every(v => v < 5);
+  if (at.locked != null && motion > 45) { at.locked = null; live.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); }
+  if (soft && !at.sweeping && Date.now() - at.lastAct > 2500) {
+    at.lastAct = Date.now();
+    if (!at.kicked) { at.kicked = true; trc("auto-tune: frames staying soft → autofocus nudge"); live.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}); }
+    else if (live.caps.focusDistance) { at.kicked = false; trc("auto-tune: still soft → sweeping the focus range"); autoFocusSweep(); }
+  }
+  if (!soft) at.kicked = false;
+  const ev = live.caps.exposureCompensation;
+  if (ev && Date.now() - at.lastEv > 3000) {
+    if (blownFrac > 0.06 && at.evSteps > -3) { at.evSteps--; at.lastEv = Date.now(); live.track.applyConstraints({ advanced: [{ exposureCompensation: Math.max(ev.min, Math.min(ev.max, at.evSteps * (ev.step || 0.5))) }] }).catch(() => {}); }
+    else if (darkFrac > 0.55 && at.evSteps < 3) { at.evSteps++; at.lastEv = Date.now(); live.track.applyConstraints({ advanced: [{ exposureCompensation: Math.max(ev.min, Math.min(ev.max, at.evSteps * (ev.step || 0.5))) }] }).catch(() => {}); }
+  }
+}
+async function autoFocusSweep() {                 // a quick pass over the focus range, keep the sharpest
+  if (at.sweeping || !live.caps.focusDistance) return; at.sweeping = true;
+  try {
+    const fd = live.caps.focusDistance, steps = 7; let best = null, bestSh = -1;
+    for (let i = 0; i < steps; i++) {
+      if (!live.on) return; const v = fd.min + (fd.max - fd.min) * i / (steps - 1);
+      await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: v }] }).catch(() => {});
+      await sleep(220); const gctx = grab.getContext("2d"); try { gctx.drawImage(video, 0, 0, grab.width, grab.height); } catch (e) {}
+      const gq = guideQuad(), s = grab.width / video.videoWidth; const xs = gq.map(p => p.x * s), ys = gq.map(p => p.y * s);
+      const sh = sharpness(gctx, Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), (Math.max(...ys) - Math.min(...ys)) * 0.25);
+      if (sh > bestSh) { bestSh = sh; best = v; }
+    }
+    if (best != null && live.on) { at.locked = best; settings.camera = settings.camera || {}; settings.camera.focusDistance = best; saveSettings(); trc(`auto-tune: focus locked at ${best.toFixed(2)} (sharp ${Math.round(bestSh)})`); await live.track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: best }] }).catch(() => {}); }
+  } finally { at.sweeping = false; at.sharpHist = []; }
+}
 let lastKick = 0;
 function focusKick() {                          // nudge the autofocus when frames stay soft
   if (!live.track || Date.now() - lastKick < 1500) return; lastKick = Date.now();
@@ -1319,10 +1405,11 @@ async function startLive() {
     $("liveTorch").classList.toggle("hidden", !live.caps.torch);
     await applyCamera();
     live.on = true; live.lastT = 0; live.startT = Date.now(); setMode(live.mode); keepAwake(true); voiceStart(); updateCount(); renderLiveLast(); live.statsTimer = setInterval(liveStats, 30000);
-    if ((!settings.camera || !settings.camera.trained || settings.camera.trained === "skipped")) setTimeout(() => { if (live.on) setHint("Camera not trained — tap 🎯 Train (2 min) so pictures come out sharp"); }, 4000);
     const fp = db.hashIds ? db.hashIds.length : 0, ln = Object.keys(learned).length; setTimeout(() => { if (live.on && !$("train").classList.contains("hidden") === false) setHint(`${HINTS[live.mode]}  (${fp ? fp.toLocaleString() + " fingerprints" : "no fingerprints"}${ln ? " + " + ln + " learned" : ""}, reader ${settings.ocrMode === "off" ? "off" : ocr.failed ? "failed" : "on"})`); }, 1500);
     live.autoBackupTimer = setInterval(() => { if (live.on && live.items.some(i => i.row)) driveAutoBackup("periodic"); }, 10 * 60 * 1000);
-    if (!(settings.camera && settings.camera.trained)) setTimeout(() => { if (live.on) startTrain(); }, 600);
+    autoTuneStart(); live.trace = []; live.traceShots = []; live.snapT = {}; live.t0 = performance.now(); live.trcT = {};
+  trc(`session start · ${APP_VERSION} · mode ${live.mode} · ${settings.fast ? "FAST" : "normal"} · strict ${settings.strict} · blindSnap ${settings.blindSnap || "off"} · fingerprints ${db.hashIds ? db.hashIds.length : 0} · learned ${Object.keys(learned).length}`);
+  setTimeout(() => { if (live.caps) trc(`camera: ${video.videoWidth}x${video.videoHeight} · focusDistance ${live.caps.focusDistance ? "yes" : "no"} · ev ${live.caps.exposureCompensation ? "yes" : "no"} · zoom ${live.caps.zoom ? "yes" : "no"}`); }, 1200);
     if (settings.ocrMode !== "off" && db.loaded) ocrWorker().catch(() => {});
     live.raf = requestAnimationFrame(liveLoop);
   } catch (e) {
@@ -1471,6 +1558,13 @@ function liveLoop(t) {
   if (!$("train").classList.contains("hidden")) return;                               // training in progress: frames only, no captures
   if (singleLike() || live.retry) {
     let quad = null; try { const mat = live.cv.imread(grab); quad = live.det.detectOne(mat); mat.delete(); } catch (e) { console.warn(e); }
+    if (!at.sweeping && (live.frameNo2 = (live.frameNo2 || 0) + 1) % 4 === 0) {     // feed the silent camera manager
+      const gq = guideQuad(), s2 = grab.width / video.videoWidth; const xs = gq.map(p => p.x * s2), ys = gq.map(p => p.y * s2);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys), w0 = Math.max(...xs) - x0, h0 = Math.max(...ys) - y0;
+      const shNow = sharpness(gctx, x0, y0, w0, h0 * 0.25);
+      let blown = 0, dark = 0; try { const dd = gctx.getImageData(x0, y0, Math.max(1, w0 | 0), Math.max(1, (h0 * 0.25) | 0)).data; let n2 = 0; for (let i = 0; i < dd.length; i += 16) { const v = 0.299 * dd[i] + 0.587 * dd[i + 1] + 0.114 * dd[i + 2]; n2++; if (v > 248) blown++; if (v < 55) dark++; } blown /= n2; dark /= n2; } catch (e) {}
+      autoTuneFrame(shNow, blown, dark, motion);
+    }
     if (quad && !quadIsCard(gctx, quad.map(p => ({ x: p.x / s, y: p.y / s })), s)) quad = null;   // an outline that isn't a real card edge is no outline
     if (live.mode === "stand" && motion > 12) { live.standMoves = (live.standMoves || 0) + 1; if (motion > 25 || live.standMoves >= 2) { live.tracker.reset(); live.hoverCool = false; live.steady = 0; live.standMoves = 0; } } else if (live.mode === "stand") live.standMoves = 0;
     // re-arm only once the previous card is really gone: no outline AND the guide area no longer looks like a card, for a few frames
@@ -1482,7 +1576,7 @@ function liveLoop(t) {
     live.lastQuad = quad; const ev = live.tracker.update(quad); drawOverlay(quad, ev === "held" && live.items[0] ? itemStatus(live.items[0]) : ev);
 
     if (ev === "lock") { live.hoverCool = true; liveCapture(quad, null, live.retry); }
-    else if (ev === "held") setHint(live.mode === "stand" ? "Got it — swap in the next card" : live.mode === "lookup" ? "Show the next card" : "Got it — lift the card and place the next one");
+    else if (ev === "held") { if (!(live.hintHold && Date.now() < live.hintHold)) setHint(live.mode === "stand" ? "Got it — swap in the next card" : live.mode === "lookup" ? "Show the next card" : "Got it — lift the card and place the next one"); }
     else if (ev === "cleared") { setHint(live.retry ? "Center the unread card and hold still" : "Next card"); }
     else if (ev === "tracking") setHint("Hold still…");
     // hover: no outline found, but the view is still and sharp -> take the guide area as the card
@@ -1578,10 +1672,12 @@ async function hiResFrame() {                 // a real photo from the camera wh
    rectangles found in table texture and shadows fail this (measured: real card 100% of the perimeter, table shapes 38-50%). */
 function quadIsCard(gctx, quad, s) {
   if (window.__noQuadCheck) return true;
+  const fail = why => { const key = why.slice(0, 20), n2 = performance.now(); if (!live.trcT || !live.trcT[key] || n2 - live.trcT[key] > 900) { (live.trcT = live.trcT || {})[key] = n2; trc(`outline rejected: ${why}`); } const Pq2 = quad.map(p => ({ x: p.x * s, y: p.y * s })); const x0 = Math.max(0, Math.min(...Pq2.map(p => p.x)) - 8), y0 = Math.max(0, Math.min(...Pq2.map(p => p.y)) - 8);
+    trcSnap("outline rejected", gctx.canvas, x0, y0, Math.min(gctx.canvas.width - x0, Math.max(...Pq2.map(p => p.x)) - x0 + 16), Math.min(gctx.canvas.height - y0, Math.max(...Pq2.map(p => p.y)) - y0 + 16)); return false; };
   const Pq = quad.map(p => ({ x: p.x * s, y: p.y * s }));
   const w1 = Math.hypot(Pq[1].x - Pq[0].x, Pq[1].y - Pq[0].y), w2 = Math.hypot(Pq[2].x - Pq[3].x, Pq[2].y - Pq[3].y);
   const h1 = Math.hypot(Pq[3].x - Pq[0].x, Pq[3].y - Pq[0].y), h2 = Math.hypot(Pq[2].x - Pq[1].x, Pq[2].y - Pq[1].y);
-  const ratio = ((w1 + w2) / 2) / Math.max(1, (h1 + h2) / 2); if (ratio < 0.5 || ratio > 0.95) return false;   // cards are 0.716 tall rectangles; allow tilt
+  const ratio = ((w1 + w2) / 2) / Math.max(1, (h1 + h2) / 2); if (ratio < 0.5 || ratio > 0.95) return fail(`shape ${ratio.toFixed(2)} not card-like (need 0.50-0.95)`);
   const W = gctx.canvas.width, H = gctx.canvas.height;
   if (!live.frameLum || live.frameLum.t !== live.lastT) { const d = gctx.getImageData(0, 0, W, H).data; const L = new Float32Array(W * H); for (let i = 0; i < W * H; i++) L[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; live.frameLum = { t: live.lastT, L }; }
   const L = live.frameLum.L; const lum = (x, y) => { x |= 0; y |= 0; return (x < 0 || y < 0 || x >= W || y >= H) ? null : L[y * W + x]; };
@@ -1591,9 +1687,11 @@ function quadIsCard(gctx, quad, s) {
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; if ((mx + nx * 6 - cx) ** 2 + (my + ny * 6 - cy) ** 2 < (mx - nx * 6 - cx) ** 2 + (my - ny * 6 - cy) ** 2) { nx = -nx; ny = -ny; }
     for (let k = 1; k <= 10; k++) { const t = k / 11, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
       const li = lum(x - nx * 4, y - ny * 4), lo = lum(x + nx * 4, y + ny * 4); if (li == null || lo == null) continue; n++; if (Math.abs(li - lo) > 14) hit++; inside.push(li); } }
-  if (n < 20) return false;
+  if (n < 20) return fail("outline mostly off-screen");
   const mean = inside.reduce((s2, v) => s2 + v, 0) / inside.length, sd = Math.sqrt(inside.reduce((s2, v) => s2 + (v - mean) ** 2, 0) / inside.length);
-  return hit / n >= 0.65 && sd <= 45;
+  if (hit / n < 0.65) return fail(`edge only ${Math.round(hit / n * 100)}% real (need 65%) — probably table texture`);
+  if (sd > 45) return fail(`border colour varies too much (σ${Math.round(sd)}) — not a printed frame`);
+  return true;
 }
 function liveScan(quad, gctx, s) {
   const t = performance.now(); if (live.scanBusy || t - (live.scanT || 0) < 80) return; live.scanT = t; live.scanBusy = true;
@@ -1605,12 +1703,14 @@ function liveScan(quad, gctx, s) {
     const looks = looksLikeCard(live.scanCanvas, true);
     if (!looks.ok) { (live.votes = live.votes || []).push(null); if (live.votes.length > 6) live.votes.shift(); live.liveGuess = null; return; }
     const hash = hashCard(live.scanCanvas); const k = hashKnown(hash);
-    const votes = live.votes = (live.votes || []); votes.push(k ? { id: k.id, sure: k.sure, dist: k.dist, hash, twin: k.twin } : null); if (votes.length > 6) votes.shift();
+    const votes = live.votes = (live.votes || []); votes.push(k ? { id: k.id, sure: k.sure, dist: k.dist, hash, twin: k.twin, close: k.close } : null); if (votes.length > 6) votes.shift();
     live.liveGuess = k ? { id: k.id, dist: k.dist } : null;
+    const seeNow = k ? `${nameOfId(k.id)} d=${k.dist} m=${k.second - k.dist}${k.sure ? " sure" : k.close ? " close" : ""}` : (looks.ok ? "no fingerprint within range" : `not card-like (${looks.why ? looks.why.slice(0, 40) : ""})`);
+    if (seeNow !== live.lastSee) { live.lastSee = seeNow; trc(`see: ${seeNow}`); }
     const last = votes[votes.length - 1], prev = votes[votes.length - 2];
     if (last && prev && last.id === prev.id && (last.sure || prev.sure) && !live.busy) {
-      live.votes = []; live.hoverCool = true; live.tracker.state = "cooldown";
-      liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: Math.min(last.dist, prev.dist), hash: last.sure ? last.hash : prev.hash, sure: true, twin: last.twin || prev.twin });
+      live.votes = []; live.hoverCool = true; live.tracker.state = "cooldown"; trc(`two frames agree → adding without a photo`);
+      liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: Math.min(last.dist, prev.dist), hash: last.sure ? last.hash : prev.hash, sure: true, twin: last.twin || prev.twin, close: last.close && prev.close });
     } else if (last && prev && votes.length >= 3 && last.id === prev.id && votes[votes.length - 3] && votes[votes.length - 3].id === last.id && !live.busy) {
       live.votes = []; live.hoverCool = true; live.tracker.state = "cooldown";
       liveCapture(quad, null, live.retry, false, false, { id: last.id, dist: last.dist, hash: last.hash, sure: false, twin: last.twin });
@@ -1625,6 +1725,7 @@ function regionOf(gctx, quad, s) {           // small canvas of a quad's boundin
 function handInGuide(gctx, s) { const c = regionOf(gctx, guideQuad(), s); return !!c && cardness(c).skin > 0.15; }
 async function liveCapture(quad, track, retryItem, hover, manual, preId) {
   if (!quad || !live.on) return;
+  const cap0 = performance.now(); trc(`capture start (${preId ? "instant" : manual ? "manual 📸" : hover ? "hover" : track ? "sweep" : "lock"})`);
   const auto = !track && !manual && !retryItem && !live.rescan;
   if (auto) {                                      // after a capture: not again while the hand is still moving that card
     const dt = Date.now() - live.lastCaptureT; if (dt < P().floor) return;
@@ -1634,12 +1735,13 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
   const rescan = live.rescan; live.rescan = null;
   const cv = live.cv, det = live.det;
   const shot = preId ? { canvas: full, photo: false } : await hiResFrame();
+  if (!preId) trc(`picture: ${shot.photo ? "full-res photo" : "video frame"} ${shot.canvas.width}x${shot.canvas.height} (${Math.round(performance.now() - cap0)}ms)`);
   let crop, thumb, hash, hashes = [];
   try {
     let q = quad, src = shot.canvas, found = null;
     if (shot.photo || hover) {                       // find the card again in the (bigger) picture; fall back to the scaled quad
       const mat = cv.imread(src); try { found = det.detectOne(mat); } catch (e) {} mat.delete();
-      if (found) q = found; else if (hover && !manual && settings.blindSnap !== "on") { setHint("No card edges found — 📸 forces a picture of the guide area"); live.rescan = rescan; return; }
+      if (found) q = found; else if (hover && !manual && settings.blindSnap !== "on") { trc("no card edges in the picture → not saving (blind snaps off)"); setHint("No card edges found — 📸 forces a picture of the guide area"); live.rescan = rescan; return; }
       else if (shot.photo) { src = full; q = quad; } else q = quad;
     }
     // a short burst: the sharpest frame is read, every frame's fingerprint is tried (glare rarely ruins all of them)
@@ -1649,8 +1751,7 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     const sharp = cands.map(c => sharpness(c.getContext("2d"), Math.round(c.width * 0.08), Math.round(c.height * 0.03), Math.round(c.width * 0.84), Math.round(c.height * 0.09)));
     let bi = 0; for (let i = 1; i < cands.length; i++) if (sharp[i] > sharp[bi]) bi = i;
     crop = cands[bi]; hashes = cands.map(hashCard); hash = hashes[bi]; var bestSharp = sharp[bi];
-    if (!manual && !track && !preId && (live.softRuns || 0) >= 4 && (!settings.camera || settings.camera.trained === "skipped" || !settings.camera.trained)) { toast("Pictures keep coming out soft — training the camera fixes this", "Train now", () => $("tuneTrain").click()); live.softRuns = 0; }
-
+  
     thumb = scaledCanvas(crop, 120).toDataURL("image/jpeg", 0.7);
     var hadOutline = !!found || (!hover && !shot.photo); }
   catch (e) { setHint("Could not crop that — try again"); if (track) { track.captured = false; track.status = "pending"; } live.rescan = rescan; return; }
@@ -1659,12 +1760,12 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     if (track) { track.captured = false; track.status = "pending"; }
     else if (!manual && !retryItem) { live.tracker.state = "tracking"; live.tracker.stable = P().lock - 1; live.hoverCool = false; }   // try again by itself
     if (!manual && !track && !preId && bestSharp < (crop.width >= 550 ? 320 : 160) && (live.softRuns || 0) < 5 && /doesn't look like a card/.test(looks.why)) {
-      live.softRuns = (live.softRuns || 0) + 1; setHint("Blurry — holding for focus…"); focusKick();                                   // an out-of-focus card reads as "featureless"
-    } else { setHint(looks.why); sound.bad(); }
+      live.softRuns = (live.softRuns || 0) + 1; trc(`hold: featureless + soft (sharp ${Math.round(bestSharp)}) → refocus and retry ${live.softRuns}/5`); setHint("Blurry — holding for focus…"); focusKick();
+    } else { trc(`rejected: ${looks.why}`); trcSnap("rejected", crop); setHint(looks.why); sound.bad(); }
     live.rescan = rescan; return;
   }
   const softLimit = crop.width >= 550 ? 320 : 160;
-  if (!manual && !track && !preId && bestSharp < softLimit && !hashKnown(hash) && (live.softRuns || 0) < 5) {
+  if (!manual && !track && !preId && bestSharp < softLimit && !hashKnown(hash) && (live.softRuns || 0) < 5 && (trc(`hold: too soft to read (sharp ${Math.round(bestSharp)} < ${softLimit}), no fingerprint match → refocus and retry ${(live.softRuns || 0) + 1}/5`), true)) {
       // fingerprints shrug off mild blur, but a picture this soft with no match would only make a junk "unknown": hold, refocus, retry
       live.softRuns = (live.softRuns || 0) + 1; live.tracker.state = "tracking"; live.tracker.stable = P().lock - 1; live.hoverCool = false;
       setHint("Blurry — holding for focus…"); focusKick(); live.rescan = rescan; return;
@@ -1684,7 +1785,7 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
   try {
     let row;
     if (seen && seen.item.row) { row = Object.assign({}, seen.item.row, { id: newId(), ts: now(), qty: 1 }); if (row.unknown) { await cropStore.put(row.id, await cropStore.get(seen.item.row.id)); } }
-    else if (preId) { row = await knownRow({ id: preId.id }, preId.hash, { foil: $("liveFoil").checked, photo: "live", list: live.listName }); if (row) { row.dist = preId.dist; if (preId.twin) row.review = [row.review, "another printing of this card looks almost the same — tap to check the version"].filter(Boolean).join("; "); if (preId.sure && preId.dist <= acceptDist() - 10 && !learned[preId.hash]) learn(preId.hash, preId.id); } else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: "live", list: live.listName, hashes }); }
+    else if (preId) { row = await knownRow({ id: preId.id }, preId.hash, { foil: $("liveFoil").checked, photo: "live", list: live.listName }); if (row) { row.dist = preId.dist; if (preId.close) row.review = [row.review, "close call — tap to verify"].filter(Boolean).join("; "); if (preId.sure && preId.dist <= acceptDist() - 10 && !learned[preId.hash]) learn(preId.hash, preId.id); await verifySet(row, crop, preId.twin); } else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: "live", list: live.listName, hashes }); }
     else row = await identifyCrop(crop, { foil: $("liveFoil").checked, photo: live.mode === "sweep" ? "sweep" : "live", list: live.listName, hashes });
     if (!track && !$("liveFoil").checked && !row.unknown) {          // foil guess from the shimmer seen while hovering (single/stand/lookup)
       const sc = sheenScore(live.sheen), fd = foilDecide(sc); row.sheen = sc;
@@ -1693,10 +1794,10 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     }
     if (live.mode === "lookup" && !rescan) {         // look-up: report and drop
       live.items = live.items.filter(i => i !== item); cropStore.del(row.id);
-      if (row.unknown) { sound.bad(); setHint("Couldn't identify that one"); speak("Couldn't identify that card", true); }
+      if (row.unknown) { sound.bad(); setHint("Couldn't identify that one"); live.hintHold = Date.now() + 2500; speak("Couldn't identify that card", true); }
       else { const owned = inventory.filter(r => !r.unknown && r.scryfall_id === row.scryfall_id); const n = owned.reduce((s, r) => s + qtyOf(r), 0); const lists = Array.from(new Set(owned.map(r => r.list))).join(", ");
         const msg = n ? `${row.name}: you have ${n}${lists ? " in " + lists : ""}, ${dollars(row.price)}` : `${row.name}: not in your inventory, ${dollars(row.price)}`;
-        setHint(msg); sound.ok(); speak(msg, true); }
+        setHint(msg); live.hintHold = Date.now() + 3000; sound.ok(); speak(msg, true); }
       return;
     }
     if (rescan) {                                 // replace the identity of an existing entry, keep its list / copies / notes
@@ -1711,7 +1812,8 @@ async function liveCapture(quad, track, retryItem, hover, manual, preId) {
     // same card as one already in this session -> one row, more copies
     const twin = !retryItem && live.items.find(i => i !== item && i.row && sameCard(i.row, row));
     if (twin) { twin.row.qty = qtyOf(twin.row) + 1; live.items = live.items.filter(i => i !== item); live.items = [twin, ...live.items.filter(i => i !== twin)]; item.row = twin.row; item.merged = true; saveInv(); if (track) { track.item = twin; track.status = rowStatus(twin.row); } }
-    else { inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb; if (!row.unknown && !row.review) cropStore.put(row.id, crop.toDataURL("image/jpeg", 0.8)).then(() => { row.hasCrop = true; }); else row.hasCrop = true; }
+    else { inventory.push(row); saveInv(); item.row = row; item.status = "done"; item.error = null; item.thumb = thumb; if (!row.unknown && !row.review) cropStore.put(row.id, crop.toDataURL("image/jpeg", 0.8)).then(() => { row.hasCrop = true; }); else row.hasCrop = true;
+    trc(row.unknown ? `added: UNKNOWN (${Math.round(performance.now() - cap0)}ms total)` : `added: ${row.name} ${row.set}#${row.number} via ${row.via}${row.dist != null ? " d=" + row.dist : ""}${row.review ? " ⚠ " + row.review.slice(0, 40) : ""} (${Math.round(performance.now() - cap0)}ms total)`); trcSnap(row.unknown ? "added UNKNOWN" : "added " + row.name.slice(0, 14), crop); }
     const st = rowStatus(row); if (track && !twin) track.status = st;
     const pile = settings.sortAssist === "on" && !row.unknown && row.list !== live.listName ? row.list : (settings.sortAssist === "on" && !row.unknown ? (settings.bulkList || live.listName) : "");
     const ownedElse = !row.unknown && !twin ? inventory.filter(x => x !== row && !x.unknown && x.scryfall_id === row.scryfall_id).reduce((s, x) => s + qtyOf(x), 0) : 0; if (ownedElse) row.owned_more = ownedElse;
@@ -1866,7 +1968,7 @@ $("tour").addEventListener("click", e => { if (e.target === $("tour")) { $("tour
 if (!settings.tourDone) setTimeout(() => { tourAt = 0; tourShow(); }, 600);
 
 /* ================= a one-tap report I can actually debug from ================= */
-const APP_VERSION = "v24";
+const APP_VERSION = "v26";
 $("appVer").textContent = APP_VERSION;
 function reportText() {
   const s = settings;
@@ -1878,8 +1980,10 @@ function reportText() {
 const imgLoad = src => new Promise(res => { if (!src) return res(null); const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
 async function buildReport() {
   const rows = inventory.filter(r => lastScanIds.includes(r.id)).slice(0, 12);
-  const W = 1080, cw = 340, ch = 560, cols = 3, header = 170;
-  const c = document.createElement("canvas"); c.width = W; c.height = header + Math.max(1, Math.ceil(rows.length / cols)) * ch + 20; const g = c.getContext("2d");
+  const shots = (live.traceShots || []).slice(-18);
+  const W = 1080, cw = 340, ch = 560, cols = 3, header = 170, shotW = 170, shotH = 300, shotCols = 6;
+  const shotsH = shots.length ? 40 + Math.ceil(shots.length / shotCols) * shotH : 0;
+  const c = document.createElement("canvas"); c.width = W; c.height = header + Math.max(1, Math.ceil(rows.length / cols)) * ch + 20 + shotsH; const g = c.getContext("2d");
   g.fillStyle = "#14171c"; g.fillRect(0, 0, c.width, c.height); g.fillStyle = "#e8e6df"; g.font = "600 26px system-ui";
   reportText().split("\n").forEach((ln, i) => { g.font = i ? "20px system-ui" : "600 26px system-ui"; g.fillText(ln.slice(0, 90), 16, 34 + i * 26); });
   for (let k = 0; k < rows.length; k++) {
@@ -1892,6 +1996,15 @@ async function buildReport() {
     g.fillText(`${r.unknown ? "" : r.set + " #" + r.number + " · "}via ${r.via || "-"}${r.dist != null ? " · dist " + r.dist : ""}`.slice(0, 34), x, y + Math.round(cw * 977 / 700) + 50);
     g.fillText(`read "${(r.name_read || "").slice(0, 24)}"${r.review ? " · " + r.review : ""}`.slice(0, 36), x, y + Math.round(cw * 977 / 700) + 72);
   }
+  if (shots.length) {
+    const y0 = header + Math.max(1, Math.ceil(rows.length / cols)) * ch + 20;
+    g.fillStyle = "#e8e6df"; g.font = "600 22px system-ui"; g.fillText("what the camera saw (moments the scanner acted on)", 16, y0 + 24);
+    for (let k = 0; k < shots.length; k++) {
+      const x = 12 + (k % shotCols) * (shotW + 8), y = y0 + 40 + Math.floor(k / shotCols) * shotH;
+      const im = await imgLoad(shots[k].img); if (im) g.drawImage(im, x, y, shotW, Math.min(shotH - 46, Math.round(shotW * im.height / Math.max(1, im.width))));
+      g.fillStyle = "#9aa3ad"; g.font = "15px system-ui"; g.fillText(shots[k].label.slice(0, 22), x, y + shotH - 26);
+    }
+  }
   return c;
 }
 async function sendReport() {
@@ -1899,9 +2012,11 @@ async function sendReport() {
     const bin = atob(dataUrl.split(",")[1]); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     const file = new File([bytes], `cardscan-report-${today()}.jpg`, { type: "image/jpeg" });
     const text = reportText();
-    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: "cardscan report", text }); return; }
-    download(file.name, file); try { await navigator.clipboard.writeText(text); } catch (e) {}
-    setStatus("Report saved as a picture (and the summary copied) — attach it in the Claude chat.");
+    const logFile = new File([text + "\n\n=== what the scanner did, step by step ===\n" + (live.trace || []).join("\n")], `cardscan-log-${today()}.txt`, { type: "text/plain" });
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file, logFile] }))) { await navigator.share({ files: [file, logFile], title: "cardscan report", text }); return; }
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: "cardscan report", text: text + "\n" + (live.trace || []).slice(-60).join("\n") }); return; }
+    download(file.name, file); download(logFile.name, logFile); try { await navigator.clipboard.writeText(text); } catch (e) {}
+    setStatus("Report picture + activity log saved — attach both in the Claude chat.");
   } catch (e) { if (!/abort/i.test(e && e.name || "")) setStatus("Could not build the report — " + (e.message || e), true); }
 }
 $("btnReport").onclick = sendReport; $("btnReport2").onclick = sendReport;
